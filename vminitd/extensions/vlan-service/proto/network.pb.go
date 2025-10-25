@@ -2,7 +2,7 @@
 // versions:
 // 	protoc-gen-go v1.36.10
 // 	protoc        v6.33.0
-// source: proto/network.proto
+// source: network.proto
 
 package proto
 
@@ -45,7 +45,7 @@ type CreateVLANRequest struct {
 
 func (x *CreateVLANRequest) Reset() {
 	*x = CreateVLANRequest{}
-	mi := &file_proto_network_proto_msgTypes[0]
+	mi := &file_network_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -57,7 +57,7 @@ func (x *CreateVLANRequest) String() string {
 func (*CreateVLANRequest) ProtoMessage() {}
 
 func (x *CreateVLANRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_network_proto_msgTypes[0]
+	mi := &file_network_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -70,7 +70,7 @@ func (x *CreateVLANRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateVLANRequest.ProtoReflect.Descriptor instead.
 func (*CreateVLANRequest) Descriptor() ([]byte, []int) {
-	return file_proto_network_proto_rawDescGZIP(), []int{0}
+	return file_network_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *CreateVLANRequest) GetParentInterface() string {
@@ -131,7 +131,7 @@ type CreateVLANResponse struct {
 
 func (x *CreateVLANResponse) Reset() {
 	*x = CreateVLANResponse{}
-	mi := &file_proto_network_proto_msgTypes[1]
+	mi := &file_network_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -143,7 +143,7 @@ func (x *CreateVLANResponse) String() string {
 func (*CreateVLANResponse) ProtoMessage() {}
 
 func (x *CreateVLANResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_network_proto_msgTypes[1]
+	mi := &file_network_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -156,7 +156,7 @@ func (x *CreateVLANResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateVLANResponse.ProtoReflect.Descriptor instead.
 func (*CreateVLANResponse) Descriptor() ([]byte, []int) {
-	return file_proto_network_proto_rawDescGZIP(), []int{1}
+	return file_network_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *CreateVLANResponse) GetSuccess() bool {
@@ -197,7 +197,7 @@ type DeleteVLANRequest struct {
 
 func (x *DeleteVLANRequest) Reset() {
 	*x = DeleteVLANRequest{}
-	mi := &file_proto_network_proto_msgTypes[2]
+	mi := &file_network_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -209,7 +209,7 @@ func (x *DeleteVLANRequest) String() string {
 func (*DeleteVLANRequest) ProtoMessage() {}
 
 func (x *DeleteVLANRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_network_proto_msgTypes[2]
+	mi := &file_network_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -222,7 +222,7 @@ func (x *DeleteVLANRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteVLANRequest.ProtoReflect.Descriptor instead.
 func (*DeleteVLANRequest) Descriptor() ([]byte, []int) {
-	return file_proto_network_proto_rawDescGZIP(), []int{2}
+	return file_network_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *DeleteVLANRequest) GetInterfaceName() string {
@@ -244,7 +244,7 @@ type DeleteVLANResponse struct {
 
 func (x *DeleteVLANResponse) Reset() {
 	*x = DeleteVLANResponse{}
-	mi := &file_proto_network_proto_msgTypes[3]
+	mi := &file_network_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -256,7 +256,7 @@ func (x *DeleteVLANResponse) String() string {
 func (*DeleteVLANResponse) ProtoMessage() {}
 
 func (x *DeleteVLANResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_network_proto_msgTypes[3]
+	mi := &file_network_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -269,7 +269,7 @@ func (x *DeleteVLANResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteVLANResponse.ProtoReflect.Descriptor instead.
 func (*DeleteVLANResponse) Descriptor() ([]byte, []int) {
-	return file_proto_network_proto_rawDescGZIP(), []int{3}
+	return file_network_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *DeleteVLANResponse) GetSuccess() bool {
@@ -301,7 +301,7 @@ type ConfigureIPRequest struct {
 
 func (x *ConfigureIPRequest) Reset() {
 	*x = ConfigureIPRequest{}
-	mi := &file_proto_network_proto_msgTypes[4]
+	mi := &file_network_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -313,7 +313,7 @@ func (x *ConfigureIPRequest) String() string {
 func (*ConfigureIPRequest) ProtoMessage() {}
 
 func (x *ConfigureIPRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_network_proto_msgTypes[4]
+	mi := &file_network_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -326,7 +326,7 @@ func (x *ConfigureIPRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConfigureIPRequest.ProtoReflect.Descriptor instead.
 func (*ConfigureIPRequest) Descriptor() ([]byte, []int) {
-	return file_proto_network_proto_rawDescGZIP(), []int{4}
+	return file_network_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *ConfigureIPRequest) GetInterfaceName() string {
@@ -362,7 +362,7 @@ type ConfigureIPResponse struct {
 
 func (x *ConfigureIPResponse) Reset() {
 	*x = ConfigureIPResponse{}
-	mi := &file_proto_network_proto_msgTypes[5]
+	mi := &file_network_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -374,7 +374,7 @@ func (x *ConfigureIPResponse) String() string {
 func (*ConfigureIPResponse) ProtoMessage() {}
 
 func (x *ConfigureIPResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_network_proto_msgTypes[5]
+	mi := &file_network_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -387,7 +387,7 @@ func (x *ConfigureIPResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConfigureIPResponse.ProtoReflect.Descriptor instead.
 func (*ConfigureIPResponse) Descriptor() ([]byte, []int) {
-	return file_proto_network_proto_rawDescGZIP(), []int{5}
+	return file_network_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *ConfigureIPResponse) GetSuccess() bool {
@@ -422,7 +422,7 @@ type AddRouteRequest struct {
 
 func (x *AddRouteRequest) Reset() {
 	*x = AddRouteRequest{}
-	mi := &file_proto_network_proto_msgTypes[6]
+	mi := &file_network_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -434,7 +434,7 @@ func (x *AddRouteRequest) String() string {
 func (*AddRouteRequest) ProtoMessage() {}
 
 func (x *AddRouteRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_network_proto_msgTypes[6]
+	mi := &file_network_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -447,7 +447,7 @@ func (x *AddRouteRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AddRouteRequest.ProtoReflect.Descriptor instead.
 func (*AddRouteRequest) Descriptor() ([]byte, []int) {
-	return file_proto_network_proto_rawDescGZIP(), []int{6}
+	return file_network_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *AddRouteRequest) GetDestination() string {
@@ -490,7 +490,7 @@ type AddRouteResponse struct {
 
 func (x *AddRouteResponse) Reset() {
 	*x = AddRouteResponse{}
-	mi := &file_proto_network_proto_msgTypes[7]
+	mi := &file_network_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -502,7 +502,7 @@ func (x *AddRouteResponse) String() string {
 func (*AddRouteResponse) ProtoMessage() {}
 
 func (x *AddRouteResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_network_proto_msgTypes[7]
+	mi := &file_network_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -515,7 +515,7 @@ func (x *AddRouteResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AddRouteResponse.ProtoReflect.Descriptor instead.
 func (*AddRouteResponse) Descriptor() ([]byte, []int) {
-	return file_proto_network_proto_rawDescGZIP(), []int{7}
+	return file_network_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *AddRouteResponse) GetSuccess() bool {
@@ -546,7 +546,7 @@ type DeleteRouteRequest struct {
 
 func (x *DeleteRouteRequest) Reset() {
 	*x = DeleteRouteRequest{}
-	mi := &file_proto_network_proto_msgTypes[8]
+	mi := &file_network_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -558,7 +558,7 @@ func (x *DeleteRouteRequest) String() string {
 func (*DeleteRouteRequest) ProtoMessage() {}
 
 func (x *DeleteRouteRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_network_proto_msgTypes[8]
+	mi := &file_network_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -571,7 +571,7 @@ func (x *DeleteRouteRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteRouteRequest.ProtoReflect.Descriptor instead.
 func (*DeleteRouteRequest) Descriptor() ([]byte, []int) {
-	return file_proto_network_proto_rawDescGZIP(), []int{8}
+	return file_network_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *DeleteRouteRequest) GetDestination() string {
@@ -607,7 +607,7 @@ type DeleteRouteResponse struct {
 
 func (x *DeleteRouteResponse) Reset() {
 	*x = DeleteRouteResponse{}
-	mi := &file_proto_network_proto_msgTypes[9]
+	mi := &file_network_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -619,7 +619,7 @@ func (x *DeleteRouteResponse) String() string {
 func (*DeleteRouteResponse) ProtoMessage() {}
 
 func (x *DeleteRouteResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_network_proto_msgTypes[9]
+	mi := &file_network_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -632,7 +632,7 @@ func (x *DeleteRouteResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteRouteResponse.ProtoReflect.Descriptor instead.
 func (*DeleteRouteResponse) Descriptor() ([]byte, []int) {
-	return file_proto_network_proto_rawDescGZIP(), []int{9}
+	return file_network_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *DeleteRouteResponse) GetSuccess() bool {
@@ -659,7 +659,7 @@ type ListInterfacesRequest struct {
 
 func (x *ListInterfacesRequest) Reset() {
 	*x = ListInterfacesRequest{}
-	mi := &file_proto_network_proto_msgTypes[10]
+	mi := &file_network_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -671,7 +671,7 @@ func (x *ListInterfacesRequest) String() string {
 func (*ListInterfacesRequest) ProtoMessage() {}
 
 func (x *ListInterfacesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_network_proto_msgTypes[10]
+	mi := &file_network_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -684,7 +684,7 @@ func (x *ListInterfacesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListInterfacesRequest.ProtoReflect.Descriptor instead.
 func (*ListInterfacesRequest) Descriptor() ([]byte, []int) {
-	return file_proto_network_proto_rawDescGZIP(), []int{10}
+	return file_network_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *ListInterfacesRequest) GetNameFilter() string {
@@ -706,7 +706,7 @@ type ListInterfacesResponse struct {
 
 func (x *ListInterfacesResponse) Reset() {
 	*x = ListInterfacesResponse{}
-	mi := &file_proto_network_proto_msgTypes[11]
+	mi := &file_network_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -718,7 +718,7 @@ func (x *ListInterfacesResponse) String() string {
 func (*ListInterfacesResponse) ProtoMessage() {}
 
 func (x *ListInterfacesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_network_proto_msgTypes[11]
+	mi := &file_network_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -731,7 +731,7 @@ func (x *ListInterfacesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListInterfacesResponse.ProtoReflect.Descriptor instead.
 func (*ListInterfacesResponse) Descriptor() ([]byte, []int) {
-	return file_proto_network_proto_rawDescGZIP(), []int{11}
+	return file_network_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *ListInterfacesResponse) GetInterfaces() []*NetworkInterface {
@@ -772,7 +772,7 @@ type NetworkInterface struct {
 
 func (x *NetworkInterface) Reset() {
 	*x = NetworkInterface{}
-	mi := &file_proto_network_proto_msgTypes[12]
+	mi := &file_network_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -784,7 +784,7 @@ func (x *NetworkInterface) String() string {
 func (*NetworkInterface) ProtoMessage() {}
 
 func (x *NetworkInterface) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_network_proto_msgTypes[12]
+	mi := &file_network_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -797,7 +797,7 @@ func (x *NetworkInterface) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NetworkInterface.ProtoReflect.Descriptor instead.
 func (*NetworkInterface) Descriptor() ([]byte, []int) {
-	return file_proto_network_proto_rawDescGZIP(), []int{12}
+	return file_network_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *NetworkInterface) GetName() string {
@@ -856,11 +856,11 @@ func (x *NetworkInterface) GetVlanId() uint32 {
 	return 0
 }
 
-var File_proto_network_proto protoreflect.FileDescriptor
+var File_network_proto protoreflect.FileDescriptor
 
-const file_proto_network_proto_rawDesc = "" +
+const file_network_proto_rawDesc = "" +
 	"\n" +
-	"\x13proto/network.proto\x12\x04vlan\"\xc3\x01\n" +
+	"\rnetwork.proto\x12\x04vlan\"\xc3\x01\n" +
 	"\x11CreateVLANRequest\x12)\n" +
 	"\x10parent_interface\x18\x01 \x01(\tR\x0fparentInterface\x12\x17\n" +
 	"\avlan_id\x18\x02 \x01(\rR\x06vlanId\x12\x1d\n" +
@@ -933,19 +933,19 @@ const file_proto_network_proto_rawDesc = "" +
 	"\x0eListInterfaces\x12\x1b.vlan.ListInterfacesRequest\x1a\x1c.vlan.ListInterfacesResponseBVZTgithub.com/Liquescent-Development/arca-vminitd/vminitd/extensions/vlan-service/protob\x06proto3"
 
 var (
-	file_proto_network_proto_rawDescOnce sync.Once
-	file_proto_network_proto_rawDescData []byte
+	file_network_proto_rawDescOnce sync.Once
+	file_network_proto_rawDescData []byte
 )
 
-func file_proto_network_proto_rawDescGZIP() []byte {
-	file_proto_network_proto_rawDescOnce.Do(func() {
-		file_proto_network_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_proto_network_proto_rawDesc), len(file_proto_network_proto_rawDesc)))
+func file_network_proto_rawDescGZIP() []byte {
+	file_network_proto_rawDescOnce.Do(func() {
+		file_network_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_network_proto_rawDesc), len(file_network_proto_rawDesc)))
 	})
-	return file_proto_network_proto_rawDescData
+	return file_network_proto_rawDescData
 }
 
-var file_proto_network_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
-var file_proto_network_proto_goTypes = []any{
+var file_network_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
+var file_network_proto_goTypes = []any{
 	(*CreateVLANRequest)(nil),      // 0: vlan.CreateVLANRequest
 	(*CreateVLANResponse)(nil),     // 1: vlan.CreateVLANResponse
 	(*DeleteVLANRequest)(nil),      // 2: vlan.DeleteVLANRequest
@@ -960,7 +960,7 @@ var file_proto_network_proto_goTypes = []any{
 	(*ListInterfacesResponse)(nil), // 11: vlan.ListInterfacesResponse
 	(*NetworkInterface)(nil),       // 12: vlan.NetworkInterface
 }
-var file_proto_network_proto_depIdxs = []int32{
+var file_network_proto_depIdxs = []int32{
 	12, // 0: vlan.ListInterfacesResponse.interfaces:type_name -> vlan.NetworkInterface
 	0,  // 1: vlan.NetworkConfig.CreateVLAN:input_type -> vlan.CreateVLANRequest
 	2,  // 2: vlan.NetworkConfig.DeleteVLAN:input_type -> vlan.DeleteVLANRequest
@@ -981,26 +981,26 @@ var file_proto_network_proto_depIdxs = []int32{
 	0,  // [0:1] is the sub-list for field type_name
 }
 
-func init() { file_proto_network_proto_init() }
-func file_proto_network_proto_init() {
-	if File_proto_network_proto != nil {
+func init() { file_network_proto_init() }
+func file_network_proto_init() {
+	if File_network_proto != nil {
 		return
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_network_proto_rawDesc), len(file_proto_network_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_network_proto_rawDesc), len(file_network_proto_rawDesc)),
 			NumEnums:      0,
 			NumMessages:   13,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
-		GoTypes:           file_proto_network_proto_goTypes,
-		DependencyIndexes: file_proto_network_proto_depIdxs,
-		MessageInfos:      file_proto_network_proto_msgTypes,
+		GoTypes:           file_network_proto_goTypes,
+		DependencyIndexes: file_network_proto_depIdxs,
+		MessageInfos:      file_network_proto_msgTypes,
 	}.Build()
-	File_proto_network_proto = out.File
-	file_proto_network_proto_goTypes = nil
-	file_proto_network_proto_depIdxs = nil
+	File_network_proto = out.File
+	file_network_proto_goTypes = nil
+	file_network_proto_depIdxs = nil
 }
