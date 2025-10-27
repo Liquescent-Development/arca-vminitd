@@ -69,10 +69,14 @@ func (f *Forwarder) AttachNetwork(device string, vsockPort uint32, ipAddress str
 		return nil, fmt.Errorf("failed to create TAP device: %w", err)
 	}
 
-	// Configure IP address and netmask
-	if err := tapDev.SetIP(ipAddress, netmask); err != nil {
-		tapDev.Close()
-		return nil, fmt.Errorf("failed to set IP address: %w", err)
+	// Configure IP address and netmask (skip for DHCP - empty IP means use DHCP)
+	if ipAddress != "" {
+		if err := tapDev.SetIP(ipAddress, netmask); err != nil {
+			tapDev.Close()
+			return nil, fmt.Errorf("failed to set IP address: %w", err)
+		}
+	} else {
+		log.Printf("Skipping static IP configuration for %s - DHCP mode (interface up, waiting for DHCP lease)", device)
 	}
 
 	// Bring interface up
@@ -82,12 +86,14 @@ func (f *Forwarder) AttachNetwork(device string, vsockPort uint32, ipAddress str
 	}
 
 	// Configure DNS to use gateway as nameserver (for the first interface only)
-	// This ensures containers can resolve DNS names through the helper VM
-	if device == "eth0" {
+	// Skip for DHCP mode - DHCP server will provide DNS configuration
+	if device == "eth0" && gateway != "" {
 		if err := configureDNS(gateway); err != nil {
 			log.Printf("Warning: Failed to configure DNS: %v", err)
 			// Don't fail - networking will work, just DNS resolution won't
 		}
+	} else if device == "eth0" && gateway == "" {
+		log.Printf("Skipping static DNS configuration for %s - DHCP mode (DNS provided via DHCP)", device)
 	}
 
 	// Listen on vsock port for host connection

@@ -640,6 +640,233 @@ func (x *GetStatusResponse) GetTotalStats() *PacketStats {
 	return nil
 }
 
+// Request to update DNS mappings for network topology
+type UpdateDNSMappingsRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Complete network topology for this container
+	// Maps network name -> list of containers on that network
+	Networks      map[string]*NetworkPeers `protobuf:"bytes,1,rep,name=networks,proto3" json:"networks,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateDNSMappingsRequest) Reset() {
+	*x = UpdateDNSMappingsRequest{}
+	mi := &file_proto_tapforwarder_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateDNSMappingsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateDNSMappingsRequest) ProtoMessage() {}
+
+func (x *UpdateDNSMappingsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_tapforwarder_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateDNSMappingsRequest.ProtoReflect.Descriptor instead.
+func (*UpdateDNSMappingsRequest) Descriptor() ([]byte, []int) {
+	return file_proto_tapforwarder_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *UpdateDNSMappingsRequest) GetNetworks() map[string]*NetworkPeers {
+	if x != nil {
+		return x.Networks
+	}
+	return nil
+}
+
+type NetworkPeers struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Containers on this network
+	Containers    []*ContainerDNSInfo `protobuf:"bytes,1,rep,name=containers,proto3" json:"containers,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *NetworkPeers) Reset() {
+	*x = NetworkPeers{}
+	mi := &file_proto_tapforwarder_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *NetworkPeers) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*NetworkPeers) ProtoMessage() {}
+
+func (x *NetworkPeers) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_tapforwarder_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use NetworkPeers.ProtoReflect.Descriptor instead.
+func (*NetworkPeers) Descriptor() ([]byte, []int) {
+	return file_proto_tapforwarder_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *NetworkPeers) GetContainers() []*ContainerDNSInfo {
+	if x != nil {
+		return x.Containers
+	}
+	return nil
+}
+
+type ContainerDNSInfo struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Container name (for DNS resolution)
+	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// Container ID (64-char Docker ID)
+	Id string `protobuf:"bytes,2,opt,name=id,proto3" json:"id,omitempty"`
+	// IP address on this network
+	IpAddress string `protobuf:"bytes,3,opt,name=ip_address,json=ipAddress,proto3" json:"ip_address,omitempty"`
+	// Hostname aliases
+	Aliases       []string `protobuf:"bytes,4,rep,name=aliases,proto3" json:"aliases,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ContainerDNSInfo) Reset() {
+	*x = ContainerDNSInfo{}
+	mi := &file_proto_tapforwarder_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ContainerDNSInfo) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ContainerDNSInfo) ProtoMessage() {}
+
+func (x *ContainerDNSInfo) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_tapforwarder_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ContainerDNSInfo.ProtoReflect.Descriptor instead.
+func (*ContainerDNSInfo) Descriptor() ([]byte, []int) {
+	return file_proto_tapforwarder_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *ContainerDNSInfo) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *ContainerDNSInfo) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *ContainerDNSInfo) GetIpAddress() string {
+	if x != nil {
+		return x.IpAddress
+	}
+	return ""
+}
+
+func (x *ContainerDNSInfo) GetAliases() []string {
+	if x != nil {
+		return x.Aliases
+	}
+	return nil
+}
+
+type UpdateDNSMappingsResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Success status
+	Success bool `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
+	// Error message if success = false
+	Error string `protobuf:"bytes,2,opt,name=error,proto3" json:"error,omitempty"`
+	// Number of DNS records updated
+	RecordsUpdated uint32 `protobuf:"varint,3,opt,name=records_updated,json=recordsUpdated,proto3" json:"records_updated,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *UpdateDNSMappingsResponse) Reset() {
+	*x = UpdateDNSMappingsResponse{}
+	mi := &file_proto_tapforwarder_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateDNSMappingsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateDNSMappingsResponse) ProtoMessage() {}
+
+func (x *UpdateDNSMappingsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_tapforwarder_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateDNSMappingsResponse.ProtoReflect.Descriptor instead.
+func (*UpdateDNSMappingsResponse) Descriptor() ([]byte, []int) {
+	return file_proto_tapforwarder_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *UpdateDNSMappingsResponse) GetSuccess() bool {
+	if x != nil {
+		return x.Success
+	}
+	return false
+}
+
+func (x *UpdateDNSMappingsResponse) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
+func (x *UpdateDNSMappingsResponse) GetRecordsUpdated() uint32 {
+	if x != nil {
+		return x.RecordsUpdated
+	}
+	return 0
+}
+
 var File_proto_tapforwarder_proto protoreflect.FileDescriptor
 
 const file_proto_tapforwarder_proto_rawDesc = "" +
@@ -691,12 +918,32 @@ const file_proto_tapforwarder_proto_rawDesc = "" +
 	"\x0factive_networks\x18\x02 \x01(\rR\x0eactiveNetworks\x12%\n" +
 	"\x0euptime_seconds\x18\x03 \x01(\x04R\ruptimeSeconds\x12B\n" +
 	"\vtotal_stats\x18\x04 \x01(\v2!.arca.tapforwarder.v1.PacketStatsR\n" +
-	"totalStats2\xa7\x03\n" +
+	"totalStats\"\xd5\x01\n" +
+	"\x18UpdateDNSMappingsRequest\x12X\n" +
+	"\bnetworks\x18\x01 \x03(\v2<.arca.tapforwarder.v1.UpdateDNSMappingsRequest.NetworksEntryR\bnetworks\x1a_\n" +
+	"\rNetworksEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x128\n" +
+	"\x05value\x18\x02 \x01(\v2\".arca.tapforwarder.v1.NetworkPeersR\x05value:\x028\x01\"V\n" +
+	"\fNetworkPeers\x12F\n" +
+	"\n" +
+	"containers\x18\x01 \x03(\v2&.arca.tapforwarder.v1.ContainerDNSInfoR\n" +
+	"containers\"o\n" +
+	"\x10ContainerDNSInfo\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x0e\n" +
+	"\x02id\x18\x02 \x01(\tR\x02id\x12\x1d\n" +
+	"\n" +
+	"ip_address\x18\x03 \x01(\tR\tipAddress\x12\x18\n" +
+	"\aaliases\x18\x04 \x03(\tR\aaliases\"t\n" +
+	"\x19UpdateDNSMappingsResponse\x12\x18\n" +
+	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x14\n" +
+	"\x05error\x18\x02 \x01(\tR\x05error\x12'\n" +
+	"\x0frecords_updated\x18\x03 \x01(\rR\x0erecordsUpdated2\x9d\x04\n" +
 	"\fTAPForwarder\x12h\n" +
 	"\rAttachNetwork\x12*.arca.tapforwarder.v1.AttachNetworkRequest\x1a+.arca.tapforwarder.v1.AttachNetworkResponse\x12h\n" +
 	"\rDetachNetwork\x12*.arca.tapforwarder.v1.DetachNetworkRequest\x1a+.arca.tapforwarder.v1.DetachNetworkResponse\x12e\n" +
 	"\fListNetworks\x12).arca.tapforwarder.v1.ListNetworksRequest\x1a*.arca.tapforwarder.v1.ListNetworksResponse\x12\\\n" +
-	"\tGetStatus\x12&.arca.tapforwarder.v1.GetStatusRequest\x1a'.arca.tapforwarder.v1.GetStatusResponseB1Z/github.com/vas-solutus/arca-tap-forwarder/protob\x06proto3"
+	"\tGetStatus\x12&.arca.tapforwarder.v1.GetStatusRequest\x1a'.arca.tapforwarder.v1.GetStatusResponse\x12t\n" +
+	"\x11UpdateDNSMappings\x12..arca.tapforwarder.v1.UpdateDNSMappingsRequest\x1a/.arca.tapforwarder.v1.UpdateDNSMappingsResponseB1Z/github.com/vas-solutus/arca-tap-forwarder/protob\x06proto3"
 
 var (
 	file_proto_tapforwarder_proto_rawDescOnce sync.Once
@@ -710,36 +957,46 @@ func file_proto_tapforwarder_proto_rawDescGZIP() []byte {
 	return file_proto_tapforwarder_proto_rawDescData
 }
 
-var file_proto_tapforwarder_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
+var file_proto_tapforwarder_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
 var file_proto_tapforwarder_proto_goTypes = []any{
-	(*AttachNetworkRequest)(nil),  // 0: arca.tapforwarder.v1.AttachNetworkRequest
-	(*AttachNetworkResponse)(nil), // 1: arca.tapforwarder.v1.AttachNetworkResponse
-	(*DetachNetworkRequest)(nil),  // 2: arca.tapforwarder.v1.DetachNetworkRequest
-	(*DetachNetworkResponse)(nil), // 3: arca.tapforwarder.v1.DetachNetworkResponse
-	(*ListNetworksRequest)(nil),   // 4: arca.tapforwarder.v1.ListNetworksRequest
-	(*ListNetworksResponse)(nil),  // 5: arca.tapforwarder.v1.ListNetworksResponse
-	(*NetworkInfo)(nil),           // 6: arca.tapforwarder.v1.NetworkInfo
-	(*PacketStats)(nil),           // 7: arca.tapforwarder.v1.PacketStats
-	(*GetStatusRequest)(nil),      // 8: arca.tapforwarder.v1.GetStatusRequest
-	(*GetStatusResponse)(nil),     // 9: arca.tapforwarder.v1.GetStatusResponse
+	(*AttachNetworkRequest)(nil),      // 0: arca.tapforwarder.v1.AttachNetworkRequest
+	(*AttachNetworkResponse)(nil),     // 1: arca.tapforwarder.v1.AttachNetworkResponse
+	(*DetachNetworkRequest)(nil),      // 2: arca.tapforwarder.v1.DetachNetworkRequest
+	(*DetachNetworkResponse)(nil),     // 3: arca.tapforwarder.v1.DetachNetworkResponse
+	(*ListNetworksRequest)(nil),       // 4: arca.tapforwarder.v1.ListNetworksRequest
+	(*ListNetworksResponse)(nil),      // 5: arca.tapforwarder.v1.ListNetworksResponse
+	(*NetworkInfo)(nil),               // 6: arca.tapforwarder.v1.NetworkInfo
+	(*PacketStats)(nil),               // 7: arca.tapforwarder.v1.PacketStats
+	(*GetStatusRequest)(nil),          // 8: arca.tapforwarder.v1.GetStatusRequest
+	(*GetStatusResponse)(nil),         // 9: arca.tapforwarder.v1.GetStatusResponse
+	(*UpdateDNSMappingsRequest)(nil),  // 10: arca.tapforwarder.v1.UpdateDNSMappingsRequest
+	(*NetworkPeers)(nil),              // 11: arca.tapforwarder.v1.NetworkPeers
+	(*ContainerDNSInfo)(nil),          // 12: arca.tapforwarder.v1.ContainerDNSInfo
+	(*UpdateDNSMappingsResponse)(nil), // 13: arca.tapforwarder.v1.UpdateDNSMappingsResponse
+	nil,                               // 14: arca.tapforwarder.v1.UpdateDNSMappingsRequest.NetworksEntry
 }
 var file_proto_tapforwarder_proto_depIdxs = []int32{
-	6, // 0: arca.tapforwarder.v1.ListNetworksResponse.networks:type_name -> arca.tapforwarder.v1.NetworkInfo
-	7, // 1: arca.tapforwarder.v1.NetworkInfo.stats:type_name -> arca.tapforwarder.v1.PacketStats
-	7, // 2: arca.tapforwarder.v1.GetStatusResponse.total_stats:type_name -> arca.tapforwarder.v1.PacketStats
-	0, // 3: arca.tapforwarder.v1.TAPForwarder.AttachNetwork:input_type -> arca.tapforwarder.v1.AttachNetworkRequest
-	2, // 4: arca.tapforwarder.v1.TAPForwarder.DetachNetwork:input_type -> arca.tapforwarder.v1.DetachNetworkRequest
-	4, // 5: arca.tapforwarder.v1.TAPForwarder.ListNetworks:input_type -> arca.tapforwarder.v1.ListNetworksRequest
-	8, // 6: arca.tapforwarder.v1.TAPForwarder.GetStatus:input_type -> arca.tapforwarder.v1.GetStatusRequest
-	1, // 7: arca.tapforwarder.v1.TAPForwarder.AttachNetwork:output_type -> arca.tapforwarder.v1.AttachNetworkResponse
-	3, // 8: arca.tapforwarder.v1.TAPForwarder.DetachNetwork:output_type -> arca.tapforwarder.v1.DetachNetworkResponse
-	5, // 9: arca.tapforwarder.v1.TAPForwarder.ListNetworks:output_type -> arca.tapforwarder.v1.ListNetworksResponse
-	9, // 10: arca.tapforwarder.v1.TAPForwarder.GetStatus:output_type -> arca.tapforwarder.v1.GetStatusResponse
-	7, // [7:11] is the sub-list for method output_type
-	3, // [3:7] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	6,  // 0: arca.tapforwarder.v1.ListNetworksResponse.networks:type_name -> arca.tapforwarder.v1.NetworkInfo
+	7,  // 1: arca.tapforwarder.v1.NetworkInfo.stats:type_name -> arca.tapforwarder.v1.PacketStats
+	7,  // 2: arca.tapforwarder.v1.GetStatusResponse.total_stats:type_name -> arca.tapforwarder.v1.PacketStats
+	14, // 3: arca.tapforwarder.v1.UpdateDNSMappingsRequest.networks:type_name -> arca.tapforwarder.v1.UpdateDNSMappingsRequest.NetworksEntry
+	12, // 4: arca.tapforwarder.v1.NetworkPeers.containers:type_name -> arca.tapforwarder.v1.ContainerDNSInfo
+	11, // 5: arca.tapforwarder.v1.UpdateDNSMappingsRequest.NetworksEntry.value:type_name -> arca.tapforwarder.v1.NetworkPeers
+	0,  // 6: arca.tapforwarder.v1.TAPForwarder.AttachNetwork:input_type -> arca.tapforwarder.v1.AttachNetworkRequest
+	2,  // 7: arca.tapforwarder.v1.TAPForwarder.DetachNetwork:input_type -> arca.tapforwarder.v1.DetachNetworkRequest
+	4,  // 8: arca.tapforwarder.v1.TAPForwarder.ListNetworks:input_type -> arca.tapforwarder.v1.ListNetworksRequest
+	8,  // 9: arca.tapforwarder.v1.TAPForwarder.GetStatus:input_type -> arca.tapforwarder.v1.GetStatusRequest
+	10, // 10: arca.tapforwarder.v1.TAPForwarder.UpdateDNSMappings:input_type -> arca.tapforwarder.v1.UpdateDNSMappingsRequest
+	1,  // 11: arca.tapforwarder.v1.TAPForwarder.AttachNetwork:output_type -> arca.tapforwarder.v1.AttachNetworkResponse
+	3,  // 12: arca.tapforwarder.v1.TAPForwarder.DetachNetwork:output_type -> arca.tapforwarder.v1.DetachNetworkResponse
+	5,  // 13: arca.tapforwarder.v1.TAPForwarder.ListNetworks:output_type -> arca.tapforwarder.v1.ListNetworksResponse
+	9,  // 14: arca.tapforwarder.v1.TAPForwarder.GetStatus:output_type -> arca.tapforwarder.v1.GetStatusResponse
+	13, // 15: arca.tapforwarder.v1.TAPForwarder.UpdateDNSMappings:output_type -> arca.tapforwarder.v1.UpdateDNSMappingsResponse
+	11, // [11:16] is the sub-list for method output_type
+	6,  // [6:11] is the sub-list for method input_type
+	6,  // [6:6] is the sub-list for extension type_name
+	6,  // [6:6] is the sub-list for extension extendee
+	0,  // [0:6] is the sub-list for field type_name
 }
 
 func init() { file_proto_tapforwarder_proto_init() }
@@ -753,7 +1010,7 @@ func file_proto_tapforwarder_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_tapforwarder_proto_rawDesc), len(file_proto_tapforwarder_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   10,
+			NumMessages:   15,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

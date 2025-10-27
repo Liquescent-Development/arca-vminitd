@@ -6,7 +6,9 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"log"
+	"net"
 	"os"
 	"os/signal"
 	"syscall"
@@ -132,6 +134,72 @@ func (s *server) GetStatus(ctx context.Context, req *pb.GetStatusRequest) (*pb.G
 			SendErrors:      totalStats.SendErrors.Load(),
 			ReceiveErrors:   totalStats.ReceiveErrors.Load(),
 		},
+	}, nil
+}
+
+// UpdateDNSMappings forwards DNS topology updates to embedded-DNS via Unix socket
+func (s *server) UpdateDNSMappings(ctx context.Context, req *pb.UpdateDNSMappingsRequest) (*pb.UpdateDNSMappingsResponse, error) {
+	log.Printf("UpdateDNSMappings: updating DNS mappings for %d networks", len(req.Networks))
+
+	// Convert protobuf to JSON format for embedded-DNS
+	mappings := map[string]interface{}{
+		"networks": make(map[string]interface{}),
+	}
+
+	recordCount := uint32(0)
+	for networkName, peers := range req.Networks {
+		containers := make([]map[string]interface{}, 0, len(peers.Containers))
+		for _, container := range peers.Containers {
+			containers = append(containers, map[string]interface{}{
+				"name":       container.Name,
+				"id":         container.Id,
+				"ip_address": container.IpAddress,
+				"aliases":    container.Aliases,
+			})
+			recordCount++
+		}
+		mappings["networks"].(map[string]interface{})[networkName] = map[string]interface{}{
+			"containers": containers,
+		}
+	}
+
+	// Connect to embedded-DNS control socket
+	conn, err := net.Dial("unix", "/tmp/arca-dns-control.sock")
+	if err != nil {
+		log.Printf("UpdateDNSMappings failed to connect to embedded-DNS: %v", err)
+		return &pb.UpdateDNSMappingsResponse{
+			Success: false,
+			Error:   err.Error(),
+		}, nil
+	}
+	defer conn.Close()
+
+	// Send mappings as JSON
+	encoder := json.NewEncoder(conn)
+	if err := encoder.Encode(mappings); err != nil {
+		log.Printf("UpdateDNSMappings failed to send mappings: %v", err)
+		return &pb.UpdateDNSMappingsResponse{
+			Success: false,
+			Error:   err.Error(),
+		}, nil
+	}
+
+	// Read response
+	var response map[string]interface{}
+	decoder := json.NewDecoder(conn)
+	if err := decoder.Decode(&response); err != nil {
+		log.Printf("UpdateDNSMappings failed to read response: %v", err)
+		return &pb.UpdateDNSMappingsResponse{
+			Success: false,
+			Error:   err.Error(),
+		}, nil
+	}
+
+	log.Printf("UpdateDNSMappings: successfully updated %d DNS records", recordCount)
+
+	return &pb.UpdateDNSMappingsResponse{
+		Success:        true,
+		RecordsUpdated: recordCount,
 	}, nil
 }
 

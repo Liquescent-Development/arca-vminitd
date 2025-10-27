@@ -21,6 +21,10 @@ service TAPForwarder {
 
     // Get status and statistics for the TAP forwarder
     rpc GetStatus(GetStatusRequest) returns (GetStatusResponse);
+
+    // Update DNS mappings for network topology changes
+    // Called by Arca daemon when containers join/leave networks
+    rpc UpdateDNSMappings(UpdateDNSMappingsRequest) returns (UpdateDNSMappingsResponse);
 }
 
 // Request to attach container to a network
@@ -133,4 +137,41 @@ message GetStatusResponse {
 
     // Overall packet statistics
     PacketStats total_stats = 4;
+}
+
+// Request to update DNS mappings for network topology
+message UpdateDNSMappingsRequest {
+    // Complete network topology for this container
+    // Maps network name -> list of containers on that network
+    map<string, NetworkPeers> networks = 1;
+}
+
+message NetworkPeers {
+    // Containers on this network
+    repeated ContainerDNSInfo containers = 1;
+}
+
+message ContainerDNSInfo {
+    // Container name (for DNS resolution)
+    string name = 1;
+
+    // Container ID (64-char Docker ID)
+    string id = 2;
+
+    // IP address on this network
+    string ip_address = 3;
+
+    // Hostname aliases
+    repeated string aliases = 4;
+}
+
+message UpdateDNSMappingsResponse {
+    // Success status
+    bool success = 1;
+
+    // Error message if success = false
+    string error = 2;
+
+    // Number of DNS records updated
+    uint32 records_updated = 3;
 }

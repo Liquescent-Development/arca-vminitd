@@ -108,6 +108,33 @@ struct Application {
         log.logLevel = .debug
 
         log.info("vminitd booting...")
+
+        // Start arca-tap-forwarder in background for TAP-over-vsock networking
+        // This service listens on vsock port 5555 (accessible from host via container.dialVsock())
+        let tapForwarderPath = "/sbin/arca-tap-forwarder"
+        let tapForwarderExists = FileManager.default.fileExists(atPath: tapForwarderPath)
+        log.info("arca-tap-forwarder binary exists: \(tapForwarderExists) at \(tapForwarderPath)")
+
+        if tapForwarderExists {
+            log.info("starting arca-tap-forwarder...")
+            var tapForwarder = Command(tapForwarderPath)
+            // Leave stdin/stdout/stderr as nil for detached background service
+            tapForwarder.stdin = nil
+            tapForwarder.stdout = nil
+            tapForwarder.stderr = .standardError  // Log errors to vminitd stderr
+            do {
+                try tapForwarder.start()
+                log.info("arca-tap-forwarder started successfully on vsock port 5555")
+            } catch {
+                log.error("failed to start arca-tap-forwarder: \(error)")
+            }
+        } else {
+            log.warning("arca-tap-forwarder binary not found at \(tapForwarderPath), TAP networking will not be available")
+        }
+
+        // NOTE: arca-embedded-dns is started later in createProcess handler (Server+GRPC.swift)
+        // when we have access to the container ID from the OCI spec environment variables
+
         let eg = MultiThreadedEventLoopGroup(numberOfThreads: System.coreCount)
         let server = Initd(log: log, group: eg)
 

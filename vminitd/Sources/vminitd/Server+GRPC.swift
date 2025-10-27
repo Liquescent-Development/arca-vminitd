@@ -487,6 +487,61 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContextAsyncProvid
                     try hostname.write(toFile: hostnamePath.path, atomically: true, encoding: .utf8)
                 }
 
+                // Write /etc/resolv.conf for Docker-compatible DNS resolution
+                // Points to embedded-dns at 127.0.0.11 for container name resolution
+                if let root = ociSpec.root {
+                    let etc = URL(fileURLWithPath: root.path).appendingPathComponent("etc")
+                    try FileManager.default.createDirectory(atPath: etc.path, withIntermediateDirectories: true)
+                    let resolvConfPath = etc.appendingPathComponent("resolv.conf")
+                    let resolvConfContent = "nameserver 127.0.0.11\n"
+                    try resolvConfContent.write(toFile: resolvConfPath.path, atomically: true, encoding: .utf8)
+                    log.info("created /etc/resolv.conf in container rootfs", metadata: [
+                        "path": "\(resolvConfPath.path)"
+                    ])
+                }
+
+                // Start embedded-dns for this container
+                // Extract ARCA_CONTAINER_ID from process environment
+                if let process = ociSpec.process {
+                    let containerID = process.env
+                        .first { $0.hasPrefix("ARCA_CONTAINER_ID=") }?
+                        .dropFirst("ARCA_CONTAINER_ID=".count)
+                        .description ?? ""
+
+                    if !containerID.isEmpty {
+                        let embeddedDNSPath = "/sbin/arca-embedded-dns"
+                        if FileManager.default.fileExists(atPath: embeddedDNSPath) {
+                            log.info("starting arca-embedded-dns for container", metadata: ["container_id": "\(containerID)"])
+                            var embeddedDNS = Command(embeddedDNSPath)
+                            embeddedDNS.arguments = [
+                                "--listen", "127.0.0.11:53",
+                                // No --helper-addr needed - will auto-detect gateway from /proc/net/route
+                                // Connects to helper VM at gateway:9999 via TCP (packets flow through TAP forwarder)
+                                "--container-id", containerID
+                            ]
+                            embeddedDNS.stdin = nil
+                            embeddedDNS.stdout = nil
+                            embeddedDNS.stderr = .standardError
+                            do {
+                                try embeddedDNS.start()
+                                log.info("arca-embedded-dns started successfully", metadata: [
+                                    "container_id": "\(containerID)",
+                                    "listen": "127.0.0.11:53"
+                                ])
+                            } catch {
+                                log.error("failed to start arca-embedded-dns", metadata: [
+                                    "container_id": "\(containerID)",
+                                    "error": "\(error)"
+                                ])
+                            }
+                        } else {
+                            log.warning("arca-embedded-dns binary not found at \(embeddedDNSPath)")
+                        }
+                    } else {
+                        log.debug("ARCA_CONTAINER_ID not found in process environment, skipping embedded-dns")
+                    }
+                }
+
                 let ctr = try ManagedContainer(
                     id: request.id,
                     stdio: stdioPorts,

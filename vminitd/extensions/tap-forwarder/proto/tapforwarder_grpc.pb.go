@@ -22,10 +22,11 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	TAPForwarder_AttachNetwork_FullMethodName = "/arca.tapforwarder.v1.TAPForwarder/AttachNetwork"
-	TAPForwarder_DetachNetwork_FullMethodName = "/arca.tapforwarder.v1.TAPForwarder/DetachNetwork"
-	TAPForwarder_ListNetworks_FullMethodName  = "/arca.tapforwarder.v1.TAPForwarder/ListNetworks"
-	TAPForwarder_GetStatus_FullMethodName     = "/arca.tapforwarder.v1.TAPForwarder/GetStatus"
+	TAPForwarder_AttachNetwork_FullMethodName     = "/arca.tapforwarder.v1.TAPForwarder/AttachNetwork"
+	TAPForwarder_DetachNetwork_FullMethodName     = "/arca.tapforwarder.v1.TAPForwarder/DetachNetwork"
+	TAPForwarder_ListNetworks_FullMethodName      = "/arca.tapforwarder.v1.TAPForwarder/ListNetworks"
+	TAPForwarder_GetStatus_FullMethodName         = "/arca.tapforwarder.v1.TAPForwarder/GetStatus"
+	TAPForwarder_UpdateDNSMappings_FullMethodName = "/arca.tapforwarder.v1.TAPForwarder/UpdateDNSMappings"
 )
 
 // TAPForwarderClient is the client API for TAPForwarder service.
@@ -43,6 +44,9 @@ type TAPForwarderClient interface {
 	ListNetworks(ctx context.Context, in *ListNetworksRequest, opts ...grpc.CallOption) (*ListNetworksResponse, error)
 	// Get status and statistics for the TAP forwarder
 	GetStatus(ctx context.Context, in *GetStatusRequest, opts ...grpc.CallOption) (*GetStatusResponse, error)
+	// Update DNS mappings for network topology changes
+	// Called by Arca daemon when containers join/leave networks
+	UpdateDNSMappings(ctx context.Context, in *UpdateDNSMappingsRequest, opts ...grpc.CallOption) (*UpdateDNSMappingsResponse, error)
 }
 
 type tAPForwarderClient struct {
@@ -93,6 +97,16 @@ func (c *tAPForwarderClient) GetStatus(ctx context.Context, in *GetStatusRequest
 	return out, nil
 }
 
+func (c *tAPForwarderClient) UpdateDNSMappings(ctx context.Context, in *UpdateDNSMappingsRequest, opts ...grpc.CallOption) (*UpdateDNSMappingsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdateDNSMappingsResponse)
+	err := c.cc.Invoke(ctx, TAPForwarder_UpdateDNSMappings_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // TAPForwarderServer is the server API for TAPForwarder service.
 // All implementations must embed UnimplementedTAPForwarderServer
 // for forward compatibility.
@@ -108,6 +122,9 @@ type TAPForwarderServer interface {
 	ListNetworks(context.Context, *ListNetworksRequest) (*ListNetworksResponse, error)
 	// Get status and statistics for the TAP forwarder
 	GetStatus(context.Context, *GetStatusRequest) (*GetStatusResponse, error)
+	// Update DNS mappings for network topology changes
+	// Called by Arca daemon when containers join/leave networks
+	UpdateDNSMappings(context.Context, *UpdateDNSMappingsRequest) (*UpdateDNSMappingsResponse, error)
 	mustEmbedUnimplementedTAPForwarderServer()
 }
 
@@ -129,6 +146,9 @@ func (UnimplementedTAPForwarderServer) ListNetworks(context.Context, *ListNetwor
 }
 func (UnimplementedTAPForwarderServer) GetStatus(context.Context, *GetStatusRequest) (*GetStatusResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetStatus not implemented")
+}
+func (UnimplementedTAPForwarderServer) UpdateDNSMappings(context.Context, *UpdateDNSMappingsRequest) (*UpdateDNSMappingsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpdateDNSMappings not implemented")
 }
 func (UnimplementedTAPForwarderServer) mustEmbedUnimplementedTAPForwarderServer() {}
 func (UnimplementedTAPForwarderServer) testEmbeddedByValue()                      {}
@@ -223,6 +243,24 @@ func _TAPForwarder_GetStatus_Handler(srv interface{}, ctx context.Context, dec f
 	return interceptor(ctx, in, info, handler)
 }
 
+func _TAPForwarder_UpdateDNSMappings_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateDNSMappingsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(TAPForwarderServer).UpdateDNSMappings(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: TAPForwarder_UpdateDNSMappings_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(TAPForwarderServer).UpdateDNSMappings(ctx, req.(*UpdateDNSMappingsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // TAPForwarder_ServiceDesc is the grpc.ServiceDesc for TAPForwarder service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -245,6 +283,10 @@ var TAPForwarder_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetStatus",
 			Handler:    _TAPForwarder_GetStatus_Handler,
+		},
+		{
+			MethodName: "UpdateDNSMappings",
+			Handler:    _TAPForwarder_UpdateDNSMappings_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
