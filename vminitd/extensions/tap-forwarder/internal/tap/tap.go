@@ -63,8 +63,9 @@ type TAP struct {
 	mac  net.HardwareAddr
 }
 
-// Create creates a new TAP device with the specified name
-func Create(name string) (*TAP, error) {
+// Create creates a new TAP device with the specified name and optional MAC address
+// If macAddr is empty, a random MAC address will be generated
+func Create(name string, macAddr string) (*TAP, error) {
 	// Open /dev/net/tun in blocking mode
 	// Blocking I/O is fine since we're in dedicated goroutines
 	fd, err := unix.Open(tunDevice, unix.O_RDWR, 0)
@@ -92,14 +93,25 @@ func Create(name string) (*TAP, error) {
 	// Create os.File from fd for compatibility
 	file := os.NewFile(uintptr(fd), tunDevice)
 
-	// Generate random MAC address (locally administered)
-	mac := make(net.HardwareAddr, 6)
-	if _, err := rand.Read(mac); err != nil {
-		file.Close()
-		return nil, fmt.Errorf("failed to generate MAC address: %w", err)
+	// Parse or generate MAC address
+	var mac net.HardwareAddr
+	if macAddr != "" {
+		// Use provided MAC address
+		mac, err = net.ParseMAC(macAddr)
+		if err != nil {
+			file.Close()
+			return nil, fmt.Errorf("failed to parse MAC address %q: %w", macAddr, err)
+		}
+	} else {
+		// Generate random MAC address (locally administered)
+		mac = make(net.HardwareAddr, 6)
+		if _, err := rand.Read(mac); err != nil {
+			file.Close()
+			return nil, fmt.Errorf("failed to generate MAC address: %w", err)
+		}
+		// Set locally administered bit, clear multicast bit
+		mac[0] = (mac[0] & 0xfe) | 0x02
 	}
-	// Set locally administered bit, clear multicast bit
-	mac[0] = (mac[0] & 0xfe) | 0x02
 
 	tap := &TAP{
 		file: file,

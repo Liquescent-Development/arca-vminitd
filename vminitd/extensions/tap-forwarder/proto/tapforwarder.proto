@@ -44,6 +44,10 @@ message AttachNetworkRequest {
     // Network mask in CIDR notation (e.g., 24 for /24)
     // If not specified, defaults to /24
     uint32 netmask = 5;
+
+    // MAC address to assign to the interface (e.g., "02:42:ac:11:00:02")
+    // If not specified, a random MAC will be generated
+    string mac_address = 6;
 }
 
 message AttachNetworkResponse {

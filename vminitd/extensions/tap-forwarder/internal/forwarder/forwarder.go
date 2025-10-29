@@ -54,7 +54,7 @@ func New() *Forwarder {
 }
 
 // AttachNetwork creates a TAP device and starts forwarding packets to/from vsock
-func (f *Forwarder) AttachNetwork(device string, vsockPort uint32, ipAddress string, gateway string, netmask uint32) (*NetworkAttachment, error) {
+func (f *Forwarder) AttachNetwork(device string, vsockPort uint32, ipAddress string, gateway string, netmask uint32, macAddress string) (*NetworkAttachment, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
@@ -63,8 +63,8 @@ func (f *Forwarder) AttachNetwork(device string, vsockPort uint32, ipAddress str
 		return nil, fmt.Errorf("device %s already attached", device)
 	}
 
-	// Create TAP device
-	tapDev, err := tap.Create(device)
+	// Create TAP device with specified MAC (or empty for random)
+	tapDev, err := tap.Create(device, macAddress)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create TAP device: %w", err)
 	}

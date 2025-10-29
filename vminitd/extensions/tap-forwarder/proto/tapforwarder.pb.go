@@ -37,7 +37,10 @@ type AttachNetworkRequest struct {
 	Gateway string `protobuf:"bytes,4,opt,name=gateway,proto3" json:"gateway,omitempty"`
 	// Network mask in CIDR notation (e.g., 24 for /24)
 	// If not specified, defaults to /24
-	Netmask       uint32 `protobuf:"varint,5,opt,name=netmask,proto3" json:"netmask,omitempty"`
+	Netmask uint32 `protobuf:"varint,5,opt,name=netmask,proto3" json:"netmask,omitempty"`
+	// MAC address to assign to the interface (e.g., "02:42:ac:11:00:02")
+	// If not specified, a random MAC will be generated
+	MacAddress    string `protobuf:"bytes,6,opt,name=mac_address,json=macAddress,proto3" json:"mac_address,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -105,6 +108,13 @@ func (x *AttachNetworkRequest) GetNetmask() uint32 {
 		return x.Netmask
 	}
 	return 0
+}
+
+func (x *AttachNetworkRequest) GetMacAddress() string {
+	if x != nil {
+		return x.MacAddress
+	}
+	return ""
 }
 
 type AttachNetworkResponse struct {
@@ -871,7 +881,7 @@ var File_proto_tapforwarder_proto protoreflect.FileDescriptor
 
 const file_proto_tapforwarder_proto_rawDesc = "" +
 	"\n" +
-	"\x18proto/tapforwarder.proto\x12\x14arca.tapforwarder.v1\"\xa0\x01\n" +
+	"\x18proto/tapforwarder.proto\x12\x14arca.tapforwarder.v1\"\xc1\x01\n" +
 	"\x14AttachNetworkRequest\x12\x16\n" +
 	"\x06device\x18\x01 \x01(\tR\x06device\x12\x1d\n" +
 	"\n" +
@@ -879,7 +889,9 @@ const file_proto_tapforwarder_proto_rawDesc = "" +
 	"\n" +
 	"ip_address\x18\x03 \x01(\tR\tipAddress\x12\x18\n" +
 	"\agateway\x18\x04 \x01(\tR\agateway\x12\x18\n" +
-	"\anetmask\x18\x05 \x01(\rR\anetmask\"h\n" +
+	"\anetmask\x18\x05 \x01(\rR\anetmask\x12\x1f\n" +
+	"\vmac_address\x18\x06 \x01(\tR\n" +
+	"macAddress\"h\n" +
 	"\x15AttachNetworkResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x14\n" +
 	"\x05error\x18\x02 \x01(\tR\x05error\x12\x1f\n" +

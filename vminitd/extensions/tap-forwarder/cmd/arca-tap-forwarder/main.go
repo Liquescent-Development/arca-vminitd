@@ -51,6 +51,7 @@ func (s *server) AttachNetwork(ctx context.Context, req *pb.AttachNetworkRequest
 		req.IpAddress,
 		req.Gateway,
 		netmask,
+		req.MacAddress, // Pass MAC address (empty string = random)
 	)
 	if err != nil {
 		log.Printf("AttachNetwork failed: %v", err)
