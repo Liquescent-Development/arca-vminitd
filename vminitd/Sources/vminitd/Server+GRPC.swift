@@ -487,20 +487,7 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContextAsyncProvid
                     try hostname.write(toFile: hostnamePath.path, atomically: true, encoding: .utf8)
                 }
 
-                // Write /etc/resolv.conf for Docker-compatible DNS resolution
-                // Points to embedded-dns at 127.0.0.11 for container name resolution
-                if let root = ociSpec.root {
-                    let etc = URL(fileURLWithPath: root.path).appendingPathComponent("etc")
-                    try FileManager.default.createDirectory(atPath: etc.path, withIntermediateDirectories: true)
-                    let resolvConfPath = etc.appendingPathComponent("resolv.conf")
-                    let resolvConfContent = "nameserver 127.0.0.11\n"
-                    try resolvConfContent.write(toFile: resolvConfPath.path, atomically: true, encoding: .utf8)
-                    log.info("created /etc/resolv.conf in container rootfs", metadata: [
-                        "path": "\(resolvConfPath.path)"
-                    ])
-                }
-
-                // Start embedded-dns for this container
+                // Start embedded-dns for this container (if ARCA_CONTAINER_ID is present)
                 // Extract ARCA_CONTAINER_ID from process environment
                 if let process = ociSpec.process {
                     let containerID = process.env
@@ -509,6 +496,20 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContextAsyncProvid
                         .description ?? ""
 
                     if !containerID.isEmpty {
+                        // Write /etc/resolv.conf for embedded-DNS (multi-network name resolution)
+                        // Only written when ARCA_CONTAINER_ID is present (OVS bridge mode containers)
+                        // vmnet containers skip this and use framework's DNS (gateway from VmnetNetwork)
+                        if let root = ociSpec.root {
+                            let etc = URL(fileURLWithPath: root.path).appendingPathComponent("etc")
+                            try FileManager.default.createDirectory(atPath: etc.path, withIntermediateDirectories: true)
+                            let resolvConfPath = etc.appendingPathComponent("resolv.conf")
+                            let resolvConfContent = "nameserver 127.0.0.11\n"
+                            try resolvConfContent.write(toFile: resolvConfPath.path, atomically: true, encoding: .utf8)
+                            log.info("created /etc/resolv.conf for embedded-DNS", metadata: [
+                                "path": "\(resolvConfPath.path)",
+                                "container_id": "\(containerID)"
+                            ])
+                        }
                         let embeddedDNSPath = "/sbin/arca-embedded-dns"
                         if FileManager.default.fileExists(atPath: embeddedDNSPath) {
                             log.info("starting arca-embedded-dns for container", metadata: ["container_id": "\(containerID)"])
