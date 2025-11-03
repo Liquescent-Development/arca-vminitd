@@ -10,7 +10,10 @@ import (
 	"os"
 	"sync"
 	"sync/atomic"
+	"time"
 
+	"github.com/insomniacslk/dhcp/dhcpv4"
+	"github.com/insomniacslk/dhcp/dhcpv4/nclient4"
 	"github.com/mdlayher/vsock"
 	"github.com/vas-solutus/arca-tap-forwarder/internal/tap"
 )
@@ -69,32 +72,14 @@ func (f *Forwarder) AttachNetwork(device string, vsockPort uint32, ipAddress str
 		return nil, fmt.Errorf("failed to create TAP device: %w", err)
 	}
 
-	// Configure IP address and netmask (skip for DHCP - empty IP means use DHCP)
-	if ipAddress != "" {
-		if err := tapDev.SetIP(ipAddress, netmask); err != nil {
-			tapDev.Close()
-			return nil, fmt.Errorf("failed to set IP address: %w", err)
-		}
-	} else {
-		log.Printf("Skipping static IP configuration for %s - DHCP mode (interface up, waiting for DHCP lease)", device)
-	}
-
-	// Bring interface up
+	// Bring interface up WITHOUT IP configuration yet
+	// IP will be configured AFTER vsock relay is connected
 	if err := tapDev.BringUp(); err != nil {
 		tapDev.Close()
 		return nil, fmt.Errorf("failed to bring interface up: %w", err)
 	}
 
-	// Configure DNS to use gateway as nameserver (for the first interface only)
-	// Skip for DHCP mode - DHCP server will provide DNS configuration
-	if device == "eth0" && gateway != "" {
-		if err := configureDNS(gateway); err != nil {
-			log.Printf("Warning: Failed to configure DNS: %v", err)
-			// Don't fail - networking will work, just DNS resolution won't
-		}
-	} else if device == "eth0" && gateway == "" {
-		log.Printf("Skipping static DNS configuration for %s - DHCP mode (DNS provided via DHCP)", device)
-	}
+	log.Printf("TAP device %s created and brought up (MAC: %s) - waiting for relay before configuring IP", device, tapDev.MAC().String())
 
 	// Listen on vsock port for host connection
 	listener, err := vsock.Listen(vsockPort, nil)
@@ -103,13 +88,13 @@ func (f *Forwarder) AttachNetwork(device string, vsockPort uint32, ipAddress str
 		return nil, fmt.Errorf("failed to listen on vsock port %d: %w", vsockPort, err)
 	}
 
-	// Create attachment (vsockConn will be set when host connects)
+	// Create attachment WITHOUT IP yet (will be set after relay connects)
 	ctx, cancel := context.WithCancel(context.Background())
 	attachment := &NetworkAttachment{
 		Device:    device,
 		VsockPort: vsockPort,
-		IPAddress: ipAddress,
-		Gateway:   gateway,
+		IPAddress: "",  // Will be set after DHCP/static config
+		Gateway:   "",  // Will be set after DHCP/static config
 		MAC:       tapDev.MAC().String(),
 		tap:       tapDev,
 		vsockConn: nil, // Will be set when host connects
@@ -127,8 +112,109 @@ func (f *Forwarder) AttachNetwork(device string, vsockPort uint32, ipAddress str
 		}
 
 		attachment.vsockConn = conn
-		log.Printf("Host connected to vsock port %d for device %s", vsockPort, device)
+		log.Printf("Host connected to vsock port %d for device %s - relay is ready", vsockPort, device)
 
+		// Start packet forwarding BEFORE DHCP so DHCP packets are actually relayed!
+		go attachment.forwardTAPtoVsock(ctx)
+		go attachment.forwardVsockToTAP(ctx)
+		log.Printf("Packet forwarding started for device %s", device)
+
+		// NOW configure IP (after relay is connected so DHCP packets can flow)
+		var actualIP, actualGateway string
+		var actualNetmask uint32
+
+		if ipAddress == "" {
+			// DHCP mode - acquire lease from OVN DHCP server
+			// Retry up to 3 times with increasing delays to account for OVN flow installation
+			// OVN can take ~10 seconds to install flows after port creation
+			log.Printf("Starting DHCP client for %s (MAC: %s)", device, tapDev.MAC().String())
+
+			var lease *DHCPLease
+			maxAttempts := 3
+			for attempt := 1; attempt <= maxAttempts; attempt++ {
+				if attempt > 1 {
+					// Wait before retry (5s, 10s delays)
+					delay := time.Duration(attempt) * 5 * time.Second
+					log.Printf("Waiting %v before DHCP retry %d/%d for %s", delay, attempt, maxAttempts, device)
+					time.Sleep(delay)
+				}
+
+				log.Printf("DHCP attempt %d/%d for %s", attempt, maxAttempts, device)
+				var err error
+				lease, err = performDHCP(device, tapDev.MAC())
+				if err == nil {
+					// Success!
+					break
+				}
+
+				log.Printf("DHCP attempt %d/%d failed for %s: %v", attempt, maxAttempts, device, err)
+				if attempt == maxAttempts {
+					log.Printf("All DHCP attempts exhausted for %s, continuing without IP", device)
+					// Don't kill the connection - continue without IP
+					goto startForwarding
+				}
+			}
+
+			actualIP = lease.IP
+			actualGateway = lease.Gateway
+			actualNetmask = lease.Netmask
+
+			log.Printf("DHCP lease acquired for %s: IP=%s Gateway=%s Netmask=/%d DNS=%v",
+				device, actualIP, actualGateway, actualNetmask, lease.DNS)
+
+			// Apply IP configuration from DHCP lease
+			if err := tapDev.SetIP(actualIP, actualNetmask); err != nil {
+				log.Printf("Failed to apply DHCP IP for %s: %v", device, err)
+				goto startForwarding
+			}
+
+			// Add default route via gateway from DHCP
+			if actualGateway != "" {
+				if err := tapDev.AddDefaultRoute(actualGateway); err != nil {
+					log.Printf("Failed to add default route for %s: %v", device, err)
+					// Continue anyway - networking may still work without default route
+				} else {
+					log.Printf("Added default route via %s for %s", actualGateway, device)
+				}
+			}
+
+			// Configure DNS from DHCP lease (for eth0 only)
+			if device == "eth0" && len(lease.DNS) > 0 {
+				if err := configureDNS(lease.DNS[0]); err != nil {
+					log.Printf("Warning: Failed to configure DNS from DHCP: %v", err)
+				}
+			}
+
+			// Update attachment with actual IP
+			attachment.IPAddress = actualIP
+			attachment.Gateway = actualGateway
+		} else {
+			// Static IP mode
+			log.Printf("Configuring static IP for %s: IP=%s Gateway=%s Netmask=/%d",
+				device, ipAddress, gateway, netmask)
+
+			if err := tapDev.SetIP(ipAddress, netmask); err != nil {
+				log.Printf("Failed to set static IP for %s: %v", device, err)
+				goto startForwarding
+			}
+
+			actualIP = ipAddress
+			actualGateway = gateway
+			actualNetmask = netmask
+
+			// Configure DNS to use gateway as nameserver (for eth0 only)
+			if device == "eth0" && gateway != "" {
+				if err := configureDNS(gateway); err != nil {
+					log.Printf("Warning: Failed to configure DNS: %v", err)
+				}
+			}
+
+			// Update attachment with actual IP
+			attachment.IPAddress = actualIP
+			attachment.Gateway = actualGateway
+		}
+
+	startForwarding:
 		// Start bidirectional forwarding now that we have the connection
 		go attachment.forwardTAPtoVsock(ctx)
 		go attachment.forwardVsockToTAP(ctx)
@@ -136,8 +222,13 @@ func (f *Forwarder) AttachNetwork(device string, vsockPort uint32, ipAddress str
 
 	f.attachments[device] = attachment
 
-	log.Printf("Network attached: device=%s vsock_port=%d ip=%s mac=%s",
-		device, vsockPort, ipAddress, attachment.MAC)
+	if ipAddress == "" {
+		log.Printf("Network attached: device=%s vsock_port=%d mode=DHCP mac=%s (IP will be configured after relay connects)",
+			device, vsockPort, attachment.MAC)
+	} else {
+		log.Printf("Network attached: device=%s vsock_port=%d mode=static ip=%s mac=%s (IP will be configured after relay connects)",
+			device, vsockPort, ipAddress, attachment.MAC)
+	}
 
 	return attachment, nil
 }
@@ -238,7 +329,20 @@ func (a *NetworkAttachment) forwardTAPtoVsock(ctx context.Context) {
 			log.Printf("TAP->vsock: device=%s bytes=%d packet=%d", a.Device, n, a.stats.PacketsReceived.Load())
 		}
 
-		// Write to vsock
+		// Write 4-byte length prefix to vsock (network byte order, big-endian)
+		lengthBuf := [4]byte{
+			byte(n >> 24),
+			byte(n >> 16),
+			byte(n >> 8),
+			byte(n),
+		}
+		if _, err := a.vsockConn.Write(lengthBuf[:]); err != nil {
+			a.stats.SendErrors.Add(1)
+			log.Printf("vsock write length error on %s: %v", a.Device, err)
+			return
+		}
+
+		// Write packet data to vsock
 		_, err = a.vsockConn.Write(buf[:n])
 		if err != nil {
 			a.stats.SendErrors.Add(1)
@@ -263,12 +367,32 @@ func (a *NetworkAttachment) forwardVsockToTAP(ctx context.Context) {
 		default:
 		}
 
-		// Read from vsock
-		n, err := a.vsockConn.Read(buf)
-		if err != nil {
+		// Read 4-byte length prefix from vsock (network byte order)
+		var lengthBuf [4]byte
+		if _, err := a.vsockConn.Read(lengthBuf[:]); err != nil {
 			if err != io.EOF {
 				a.stats.ReceiveErrors.Add(1)
-				log.Printf("vsock read error on %s: %v", a.Device, err)
+				log.Printf("vsock read length error on %s: %v", a.Device, err)
+			}
+			return
+		}
+
+		// Decode length (big-endian)
+		packetLen := uint32(lengthBuf[0])<<24 | uint32(lengthBuf[1])<<16 |
+		             uint32(lengthBuf[2])<<8 | uint32(lengthBuf[3])
+
+		if packetLen > 65536 {
+			a.stats.ReceiveErrors.Add(1)
+			log.Printf("Invalid packet length from vsock: %d (max 65536)", packetLen)
+			return
+		}
+
+		// Read exact packet data from vsock
+		packet := buf[:packetLen]
+		if _, err := a.vsockConn.Read(packet); err != nil {
+			if err != io.EOF {
+				a.stats.ReceiveErrors.Add(1)
+				log.Printf("vsock read data error on %s: %v", a.Device, err)
 			}
 			return
 		}
@@ -277,14 +401,14 @@ func (a *NetworkAttachment) forwardVsockToTAP(ctx context.Context) {
 
 		// Log first few packets for debugging
 		if reversePackets.Load() <= 5 {
-			log.Printf("vsock->TAP: device=%s bytes=%d packet=%d", a.Device, n, reversePackets.Load())
+			log.Printf("vsock->TAP: device=%s bytes=%d packet=%d", a.Device, packetLen, reversePackets.Load())
 		}
 
 		a.stats.PacketsReceived.Add(1)
-		a.stats.BytesReceived.Add(uint64(n))
+		a.stats.BytesReceived.Add(uint64(packetLen))
 
 		// Write to TAP device
-		_, err = a.tap.Write(buf[:n])
+		_, err := a.tap.Write(packet)
 		if err != nil {
 			a.stats.SendErrors.Add(1)
 			log.Printf("TAP write error on %s: %v", a.Device, err)
@@ -292,7 +416,7 @@ func (a *NetworkAttachment) forwardVsockToTAP(ctx context.Context) {
 		}
 
 		a.stats.PacketsSent.Add(1)
-		a.stats.BytesSent.Add(uint64(n))
+		a.stats.BytesSent.Add(uint64(packetLen))
 	}
 }
 
@@ -311,6 +435,85 @@ func (a *NetworkAttachment) GetStats() Stats {
 	stats.ReceiveErrors.Store(a.stats.ReceiveErrors.Load())
 
 	return stats
+}
+
+// DHCPLease represents a DHCP lease with all configuration
+type DHCPLease struct {
+	IP      string
+	Netmask uint32
+	Gateway string
+	DNS     []string
+}
+
+// performDHCP performs a DHCP request and returns the lease
+func performDHCP(interfaceName string, mac net.HardwareAddr) (*DHCPLease, error) {
+	log.Printf("Performing DHCP on interface %s (MAC: %s)", interfaceName, mac.String())
+
+	// Create DHCP client with 10 second timeout
+	client, err := nclient4.New(interfaceName,
+		nclient4.WithTimeout(10*time.Second),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create DHCP client: %w", err)
+	}
+	defer client.Close()
+
+	log.Printf("Sending DHCPDISCOVER on %s", interfaceName)
+
+	// Perform DHCP 4-way handshake (DISCOVER -> OFFER -> REQUEST -> ACK)
+	lease, err := client.Request(context.Background())
+	if err != nil {
+		return nil, fmt.Errorf("DHCP request failed: %w", err)
+	}
+
+	if lease == nil || lease.ACK == nil {
+		return nil, fmt.Errorf("DHCP returned nil lease")
+	}
+
+	ack := lease.ACK
+
+	log.Printf("Received DHCPACK: YourIP=%s ServerIP=%s", ack.YourIPAddr, ack.ServerIPAddr)
+
+	// Extract IP address
+	ip := ack.YourIPAddr.String()
+	if ip == "" || ip == "0.0.0.0" {
+		return nil, fmt.Errorf("DHCP did not provide an IP address")
+	}
+
+	// Extract subnet mask (Option 1)
+	var netmask uint32 = 24 // Default to /24
+	if maskOption := ack.Options.Get(dhcpv4.OptionSubnetMask); maskOption != nil {
+		if len(maskOption) == 4 {
+			mask := net.IPMask(maskOption)
+			ones, _ := mask.Size()
+			netmask = uint32(ones)
+		}
+	}
+
+	// Extract gateway (Option 3 - Router)
+	var gateway string
+	if routerOption := ack.Options.Get(dhcpv4.OptionRouter); routerOption != nil && len(routerOption) >= 4 {
+		gateway = net.IP(routerOption[:4]).String()
+	}
+
+	// Extract DNS servers (Option 6)
+	var dns []string
+	if dnsOption := ack.Options.Get(dhcpv4.OptionDomainNameServer); dnsOption != nil {
+		// DNS option contains multiple 4-byte IP addresses
+		for i := 0; i+3 < len(dnsOption); i += 4 {
+			dnsIP := net.IP(dnsOption[i : i+4])
+			dns = append(dns, dnsIP.String())
+		}
+	}
+
+	log.Printf("DHCP lease details: IP=%s/%d Gateway=%s DNS=%v", ip, netmask, gateway, dns)
+
+	return &DHCPLease{
+		IP:      ip,
+		Netmask: netmask,
+		Gateway: gateway,
+		DNS:     dns,
+	}, nil
 }
 
 // configureDNS updates /etc/resolv.conf to use the network gateway as nameserver

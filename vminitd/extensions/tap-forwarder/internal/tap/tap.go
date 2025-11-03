@@ -33,7 +33,31 @@ const (
 
 	// Hardware address type (Ethernet)
 	ARPHRD_ETHER = 1
+
+	// Netlink constants (Linux-specific, not in unix package on macOS)
+	AF_NETLINK         = 16
+	NETLINK_ROUTE      = 0
+	RTM_NEWROUTE       = 24
+	NLM_F_REQUEST      = 0x1
+	NLM_F_CREATE       = 0x400
+	NLM_F_EXCL         = 0x200
+	NLM_F_ACK          = 0x4
+	RT_TABLE_MAIN      = 254
+	RTPROT_BOOT        = 3
+	RT_SCOPE_UNIVERSE  = 0
+	RTN_UNICAST        = 1
+	RTA_GATEWAY        = 5
+	RTA_OIF            = 4
+	NLMSG_ERROR        = 2
 )
+
+// sockaddrNetlink is the netlink socket address (not in unix package on macOS)
+type sockaddrNetlink struct {
+	Family uint16
+	Pad    uint16
+	Pid    uint32
+	Groups uint32
+}
 
 // ifreq structure for ioctl calls
 type ifreq struct {
@@ -275,6 +299,146 @@ func (t *TAP) Name() string {
 // MAC returns the MAC address
 func (t *TAP) MAC() net.HardwareAddr {
 	return t.mac
+}
+
+// AddDefaultRoute adds a default route via the specified gateway using netlink
+func (t *TAP) AddDefaultRoute(gateway string) error {
+	// Parse gateway IP
+	gwIP := net.ParseIP(gateway)
+	if gwIP == nil {
+		return fmt.Errorf("invalid gateway IP: %s", gateway)
+	}
+	gwIP4 := gwIP.To4()
+	if gwIP4 == nil {
+		return fmt.Errorf("not an IPv4 gateway: %s", gateway)
+	}
+
+	// Get interface index
+	iface, err := net.InterfaceByName(t.name)
+	if err != nil {
+		return fmt.Errorf("failed to get interface %s: %w", t.name, err)
+	}
+
+	// Create netlink socket
+	fd, err := unix.Socket(AF_NETLINK, unix.SOCK_RAW, NETLINK_ROUTE)
+	if err != nil {
+		return fmt.Errorf("failed to create netlink socket: %w", err)
+	}
+	defer unix.Close(fd)
+
+	// Bind netlink socket
+	addr := &sockaddrNetlink{Family: AF_NETLINK}
+	sa := (*unix.RawSockaddrAny)(unsafe.Pointer(addr))
+	if _, _, errno := unix.Syscall(unix.SYS_BIND, uintptr(fd), uintptr(unsafe.Pointer(sa)), unsafe.Sizeof(*addr)); errno != 0 {
+		return fmt.Errorf("failed to bind netlink socket: %v", errno)
+	}
+
+	// Build RTM_NEWROUTE message for default route (0.0.0.0/0 via gateway)
+	// Message: nlmsghdr + rtmsg + RTA_GATEWAY + RTA_OIF
+
+	const (
+		nlmsgHdrLen = 16  // sizeof(struct nlmsghdr)
+		rtmsgLen    = 12  // sizeof(struct rtmsg)
+		rtaHdrLen   = 4   // sizeof(struct rtattr)
+	)
+
+	// Align to 4-byte boundary
+	align := func(n int) int {
+		return (n + 3) & ^3
+	}
+
+	// RTA_GATEWAY: header (4) + IPv4 (4) = 8 bytes aligned
+	gwAttrLen := align(rtaHdrLen + 4)
+	// RTA_OIF: header (4) + uint32 (4) = 8 bytes aligned
+	oifAttrLen := align(rtaHdrLen + 4)
+
+	msgLen := nlmsgHdrLen + rtmsgLen + gwAttrLen + oifAttrLen
+
+	buf := make([]byte, msgLen)
+	pos := 0
+
+	// nlmsghdr
+	*(*uint32)(unsafe.Pointer(&buf[pos])) = uint32(msgLen) // len
+	pos += 4
+	*(*uint16)(unsafe.Pointer(&buf[pos])) = RTM_NEWROUTE // type
+	pos += 2
+	*(*uint16)(unsafe.Pointer(&buf[pos])) = NLM_F_REQUEST | NLM_F_CREATE | NLM_F_EXCL | NLM_F_ACK // flags
+	pos += 2
+	*(*uint32)(unsafe.Pointer(&buf[pos])) = 1 // seq
+	pos += 4
+	*(*uint32)(unsafe.Pointer(&buf[pos])) = 0 // pid
+	pos += 4
+
+	// rtmsg
+	buf[pos] = unix.AF_INET           // family
+	buf[pos+1] = 0                    // dst_len (0 for default route)
+	buf[pos+2] = 0                    // src_len
+	buf[pos+3] = 0                    // tos
+	buf[pos+4] = RT_TABLE_MAIN   // table
+	buf[pos+5] = RTPROT_BOOT     // protocol
+	buf[pos+6] = RT_SCOPE_UNIVERSE // scope
+	buf[pos+7] = RTN_UNICAST     // type
+	*(*uint32)(unsafe.Pointer(&buf[pos+8])) = 0 // flags
+	pos += rtmsgLen
+
+	// RTA_GATEWAY
+	*(*uint16)(unsafe.Pointer(&buf[pos])) = uint16(rtaHdrLen + 4) // len
+	pos += 2
+	*(*uint16)(unsafe.Pointer(&buf[pos])) = RTA_GATEWAY // type
+	pos += 2
+	copy(buf[pos:], gwIP4)
+	pos += 4
+	pos = align(pos)
+
+	// RTA_OIF (output interface)
+	*(*uint16)(unsafe.Pointer(&buf[pos])) = uint16(rtaHdrLen + 4) // len
+	pos += 2
+	*(*uint16)(unsafe.Pointer(&buf[pos])) = RTA_OIF // type
+	pos += 2
+	*(*uint32)(unsafe.Pointer(&buf[pos])) = uint32(iface.Index)
+
+	// Send netlink message
+	_, _, errno := unix.Syscall6(
+		unix.SYS_SENDTO,
+		uintptr(fd),
+		uintptr(unsafe.Pointer(&buf[0])),
+		uintptr(len(buf)),
+		0,
+		uintptr(unsafe.Pointer(addr)),
+		unsafe.Sizeof(*addr),
+	)
+	if errno != 0 {
+		return fmt.Errorf("failed to send netlink message: %v", errno)
+	}
+
+	// Read ACK
+	ackBuf := make([]byte, 4096)
+	n, _, errno := unix.Syscall(
+		unix.SYS_RECVFROM,
+		uintptr(fd),
+		uintptr(unsafe.Pointer(&ackBuf[0])),
+		uintptr(len(ackBuf)),
+	)
+	if errno != 0 {
+		return fmt.Errorf("failed to receive netlink ACK: %v", errno)
+	}
+
+	// Check for error in ACK
+	if n < nlmsgHdrLen {
+		return fmt.Errorf("netlink ACK too short: %d bytes", n)
+	}
+
+	ackType := *(*uint16)(unsafe.Pointer(&ackBuf[4]))
+	if ackType == NLMSG_ERROR {
+		if n >= nlmsgHdrLen+4 {
+			errCode := *(*int32)(unsafe.Pointer(&ackBuf[nlmsgHdrLen]))
+			if errCode != 0 {
+				return fmt.Errorf("netlink error: %d", -errCode)
+			}
+		}
+	}
+
+	return nil
 }
 
 // Close closes the TAP device
