@@ -8,11 +8,11 @@ import (
 	"fmt"
 	"log"
 	"net"
-	"os/exec"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/vishvananda/netlink"
 	"golang.org/x/crypto/curve25519"
 	"golang.zx2c4.com/wireguard/wgctrl"
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
@@ -254,13 +254,20 @@ func (h *Hub) GetStatus() HubStatus {
 	}
 }
 
-// createInterface creates the WireGuard network interface
+// createInterface creates the WireGuard network interface using netlink
 func (h *Hub) createInterface() error {
-	// ip link add dev wg0 type wireguard
-	cmd := exec.Command("ip", "link", "add", "dev", h.interfaceName, "type", "wireguard")
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("failed to create interface: %w (output: %s)", err, string(output))
+	// Create WireGuard link attributes
+	la := netlink.NewLinkAttrs()
+	la.Name = h.interfaceName
+
+	// Create WireGuard link (netlink.Wireguard implements Link interface)
+	link := &netlink.Wireguard{LinkAttrs: la}
+
+	// Add the link to the system
+	if err := netlink.LinkAdd(link); err != nil {
+		return fmt.Errorf("failed to create interface via netlink: %w", err)
 	}
+
 	return nil
 }
 
@@ -293,20 +300,32 @@ func (h *Hub) configureInterface() error {
 	return nil
 }
 
-// assignIPAddress adds an IP address to the interface
+// assignIPAddress adds an IP address to the interface using netlink
 func (h *Hub) assignIPAddress(ipAddress, networkCIDR string) error {
 	// Extract network mask from CIDR (e.g., "172.18.0.0/16" -> 16)
 	parts := strings.Split(networkCIDR, "/")
 	if len(parts) != 2 {
 		return fmt.Errorf("invalid CIDR: %s", networkCIDR)
 	}
-	netmask := parts[1]
+	prefixLen := parts[1]
 
-	// ip addr add <ip>/<netmask> dev wg0
-	cmd := exec.Command("ip", "addr", "add", fmt.Sprintf("%s/%s", ipAddress, netmask), "dev", h.interfaceName)
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("failed to assign IP address: %w (output: %s)", err, string(output))
+	// Get link by name
+	link, err := netlink.LinkByName(h.interfaceName)
+	if err != nil {
+		return fmt.Errorf("failed to get link %s: %w", h.interfaceName, err)
 	}
+
+	// Parse CIDR address
+	addr, err := netlink.ParseAddr(fmt.Sprintf("%s/%s", ipAddress, prefixLen))
+	if err != nil {
+		return fmt.Errorf("failed to parse address %s/%s: %w", ipAddress, prefixLen, err)
+	}
+
+	// Add address to link
+	if err := netlink.AddrAdd(link, addr); err != nil {
+		return fmt.Errorf("failed to add IP address via netlink: %w", err)
+	}
+
 	return nil
 }
 
@@ -315,39 +334,64 @@ func (h *Hub) addIPAddress(ipAddress, networkCIDR string) error {
 	return h.assignIPAddress(ipAddress, networkCIDR)
 }
 
-// removeIPAddress removes an IP address from the interface
+// removeIPAddress removes an IP address from the interface using netlink
 func (h *Hub) removeIPAddress(ipAddress, networkCIDR string) error {
+	// Extract network mask from CIDR
 	parts := strings.Split(networkCIDR, "/")
 	if len(parts) != 2 {
 		return fmt.Errorf("invalid CIDR: %s", networkCIDR)
 	}
-	netmask := parts[1]
+	prefixLen := parts[1]
 
-	// ip addr del <ip>/<netmask> dev wg0
-	cmd := exec.Command("ip", "addr", "del", fmt.Sprintf("%s/%s", ipAddress, netmask), "dev", h.interfaceName)
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("failed to remove IP address: %w (output: %s)", err, string(output))
+	// Get link by name
+	link, err := netlink.LinkByName(h.interfaceName)
+	if err != nil {
+		return fmt.Errorf("failed to get link %s: %w", h.interfaceName, err)
 	}
+
+	// Parse CIDR address
+	addr, err := netlink.ParseAddr(fmt.Sprintf("%s/%s", ipAddress, prefixLen))
+	if err != nil {
+		return fmt.Errorf("failed to parse address %s/%s: %w", ipAddress, prefixLen, err)
+	}
+
+	// Remove address from link
+	if err := netlink.AddrDel(link, addr); err != nil {
+		return fmt.Errorf("failed to remove IP address via netlink: %w", err)
+	}
+
 	return nil
 }
 
-// bringInterfaceUp brings the interface up
+// bringInterfaceUp brings the interface up using netlink
 func (h *Hub) bringInterfaceUp() error {
-	// ip link set wg0 up
-	cmd := exec.Command("ip", "link", "set", h.interfaceName, "up")
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("failed to bring interface up: %w (output: %s)", err, string(output))
+	// Get link by name
+	link, err := netlink.LinkByName(h.interfaceName)
+	if err != nil {
+		return fmt.Errorf("failed to get link %s: %w", h.interfaceName, err)
 	}
+
+	// Set link up
+	if err := netlink.LinkSetUp(link); err != nil {
+		return fmt.Errorf("failed to bring interface up via netlink: %w", err)
+	}
+
 	return nil
 }
 
-// destroyInterface destroys the WireGuard interface
+// destroyInterface destroys the WireGuard interface using netlink
 func (h *Hub) destroyInterface() error {
-	// ip link del dev wg0
-	cmd := exec.Command("ip", "link", "del", "dev", h.interfaceName)
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("failed to destroy interface: %w (output: %s)", err, string(output))
+	// Get link by name
+	link, err := netlink.LinkByName(h.interfaceName)
+	if err != nil {
+		return fmt.Errorf("failed to get link %s: %w", h.interfaceName, err)
 	}
+
+	// Delete link
+	if err := netlink.LinkDel(link); err != nil {
+		return fmt.Errorf("failed to destroy interface via netlink: %w", err)
+	}
+
 	return nil
 }
 
