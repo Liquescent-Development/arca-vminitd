@@ -132,6 +132,29 @@ struct Application {
             log.warning("arca-tap-forwarder binary not found at \(tapForwarderPath), TAP networking will not be available")
         }
 
+        // Start arca-wireguard-service in background for WireGuard networking
+        // This service listens on vsock port 51820 (accessible from host via container.dialVsock())
+        let wireGuardServicePath = "/sbin/arca-wireguard-service"
+        let wireGuardServiceExists = FileManager.default.fileExists(atPath: wireGuardServicePath)
+        log.info("arca-wireguard-service binary exists: \(wireGuardServiceExists) at \(wireGuardServicePath)")
+
+        if wireGuardServiceExists {
+            log.info("starting arca-wireguard-service...")
+            var wireGuardService = Command(wireGuardServicePath)
+            // Leave stdin/stdout/stderr as nil for detached background service
+            wireGuardService.stdin = nil
+            wireGuardService.stdout = nil
+            wireGuardService.stderr = .standardError  // Log errors to vminitd stderr
+            do {
+                try wireGuardService.start()
+                log.info("arca-wireguard-service started successfully on vsock port 51820")
+            } catch {
+                log.error("failed to start arca-wireguard-service: \(error)")
+            }
+        } else {
+            log.warning("arca-wireguard-service binary not found at \(wireGuardServicePath), WireGuard networking will not be available")
+        }
+
         // NOTE: arca-embedded-dns is started later in createProcess handler (Server+GRPC.swift)
         // when we have access to the container ID from the OCI spec environment variables
 
