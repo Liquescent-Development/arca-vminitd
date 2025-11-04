@@ -259,9 +259,10 @@ func (h *Hub) createInterface() error {
 
 // configureInterface sets private key and listen port
 func (h *Hub) configureInterface() error {
-	// wg set wg0 private-key <(echo $PRIVATE_KEY) listen-port $LISTEN_PORT
-	cmd := exec.Command("sh", "-c", fmt.Sprintf("echo '%s' | wg set %s private-key /dev/stdin listen-port %d",
-		h.privateKey, h.interfaceName, h.listenPort))
+	// wg set wg0 private-key /dev/stdin listen-port $LISTEN_PORT
+	// Pass private key via stdin (no shell needed)
+	cmd := exec.Command("wg", "set", h.interfaceName, "private-key", "/dev/stdin", "listen-port", fmt.Sprintf("%d", h.listenPort))
+	cmd.Stdin = strings.NewReader(h.privateKey)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to configure interface: %w (output: %s)", err, string(output))
 	}
@@ -392,8 +393,9 @@ func (h *Hub) getPeerStats() []PeerStatus {
 
 // derivePublicKey generates a public key from a private key
 func derivePublicKey(privateKey string) (string, error) {
-	// echo $PRIVATE_KEY | wg pubkey
-	cmd := exec.Command("sh", "-c", fmt.Sprintf("echo '%s' | wg pubkey", privateKey))
+	// Pass private key to wg pubkey via stdin (no shell needed)
+	cmd := exec.Command("wg", "pubkey")
+	cmd.Stdin = strings.NewReader(privateKey)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("failed to derive public key: %w (output: %s)", err, string(output))
