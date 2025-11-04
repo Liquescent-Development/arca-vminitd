@@ -4,11 +4,18 @@
 package wireguard
 
 import (
+	"encoding/base64"
 	"fmt"
 	"log"
+	"net"
 	"os/exec"
 	"strings"
 	"sync"
+	"time"
+
+	"golang.org/x/crypto/curve25519"
+	"golang.zx2c4.com/wireguard/wgctrl"
+	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 )
 
 // Hub represents a WireGuard hub interface for a container
@@ -257,15 +264,32 @@ func (h *Hub) createInterface() error {
 	return nil
 }
 
-// configureInterface sets private key and listen port
+// configureInterface sets private key and listen port using wgctrl
 func (h *Hub) configureInterface() error {
-	// wg set wg0 private-key /dev/stdin listen-port $LISTEN_PORT
-	// Pass private key via stdin (no shell needed)
-	cmd := exec.Command("wg", "set", h.interfaceName, "private-key", "/dev/stdin", "listen-port", fmt.Sprintf("%d", h.listenPort))
-	cmd.Stdin = strings.NewReader(h.privateKey)
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("failed to configure interface: %w (output: %s)", err, string(output))
+	// Parse private key
+	privateKey, err := wgtypes.ParseKey(h.privateKey)
+	if err != nil {
+		return fmt.Errorf("failed to parse private key: %w", err)
 	}
+
+	// Create wgctrl client
+	client, err := wgctrl.New()
+	if err != nil {
+		return fmt.Errorf("failed to create wgctrl client: %w", err)
+	}
+	defer client.Close()
+
+	// Configure device with private key and listen port
+	listenPort := int(h.listenPort)
+	config := wgtypes.Config{
+		PrivateKey: &privateKey,
+		ListenPort: &listenPort,
+	}
+
+	if err := client.ConfigureDevice(h.interfaceName, config); err != nil {
+		return fmt.Errorf("failed to configure interface: %w", err)
+	}
+
 	return nil
 }
 
@@ -327,78 +351,236 @@ func (h *Hub) destroyInterface() error {
 	return nil
 }
 
-// addPeer adds a peer to the WireGuard interface
-func (h *Hub) addPeer(endpoint, publicKey string, allowedIPs []string) error {
-	allowedIPsStr := strings.Join(allowedIPs, ",")
-
-	// wg set wg0 peer <public-key> endpoint <endpoint> allowed-ips <cidrs> persistent-keepalive 25
-	cmd := exec.Command("wg", "set", h.interfaceName,
-		"peer", publicKey,
-		"endpoint", endpoint,
-		"allowed-ips", allowedIPsStr,
-		"persistent-keepalive", "25")
-
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("failed to add peer: %w (output: %s)", err, string(output))
+// addPeer adds a peer to the WireGuard interface using wgctrl
+func (h *Hub) addPeer(endpoint, publicKeyStr string, allowedIPs []string) error {
+	// Parse peer public key
+	peerKey, err := wgtypes.ParseKey(publicKeyStr)
+	if err != nil {
+		return fmt.Errorf("failed to parse peer public key: %w", err)
 	}
+
+	// Parse endpoint
+	udpAddr, err := net.ResolveUDPAddr("udp", endpoint)
+	if err != nil {
+		return fmt.Errorf("failed to parse endpoint: %w", err)
+	}
+
+	// Parse allowed IPs
+	allowedIPNets := make([]net.IPNet, 0, len(allowedIPs))
+	for _, cidr := range allowedIPs {
+		_, ipnet, err := net.ParseCIDR(cidr)
+		if err != nil {
+			return fmt.Errorf("failed to parse allowed IP %s: %w", cidr, err)
+		}
+		allowedIPNets = append(allowedIPNets, *ipnet)
+	}
+
+	// Persistent keepalive
+	keepalive := 25 * time.Second
+
+	// Create peer config
+	peerConfig := wgtypes.PeerConfig{
+		PublicKey:                   peerKey,
+		Endpoint:                    udpAddr,
+		AllowedIPs:                  allowedIPNets,
+		PersistentKeepaliveInterval: &keepalive,
+	}
+
+	// Create wgctrl client
+	client, err := wgctrl.New()
+	if err != nil {
+		return fmt.Errorf("failed to create wgctrl client: %w", err)
+	}
+	defer client.Close()
+
+	// Configure device to add peer
+	config := wgtypes.Config{
+		Peers: []wgtypes.PeerConfig{peerConfig},
+	}
+
+	if err := client.ConfigureDevice(h.interfaceName, config); err != nil {
+		return fmt.Errorf("failed to add peer: %w", err)
+	}
+
 	return nil
 }
 
-// updatePeerAllowedIPs updates allowed IPs for a peer
-func (h *Hub) updatePeerAllowedIPs(publicKey string, allowedCIDRs []string) error {
-	allowedIPsStr := strings.Join(allowedCIDRs, ",")
-
-	// wg set wg0 peer <public-key> allowed-ips <cidrs>
-	cmd := exec.Command("wg", "set", h.interfaceName,
-		"peer", publicKey,
-		"allowed-ips", allowedIPsStr)
-
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("failed to update peer allowed IPs: %w (output: %s)", err, string(output))
+// updatePeerAllowedIPs updates allowed IPs for a peer using wgctrl
+func (h *Hub) updatePeerAllowedIPs(publicKeyStr string, allowedCIDRs []string) error {
+	// Parse peer public key
+	peerKey, err := wgtypes.ParseKey(publicKeyStr)
+	if err != nil {
+		return fmt.Errorf("failed to parse peer public key: %w", err)
 	}
+
+	// Parse allowed IPs
+	allowedIPNets := make([]net.IPNet, 0, len(allowedCIDRs))
+	for _, cidr := range allowedCIDRs {
+		_, ipnet, err := net.ParseCIDR(cidr)
+		if err != nil {
+			return fmt.Errorf("failed to parse allowed IP %s: %w", cidr, err)
+		}
+		allowedIPNets = append(allowedIPNets, *ipnet)
+	}
+
+	// Update peer config (UpdateOnly=true means only update existing peer)
+	updateOnly := true
+	peerConfig := wgtypes.PeerConfig{
+		PublicKey:  peerKey,
+		UpdateOnly: updateOnly,
+		AllowedIPs: allowedIPNets,
+	}
+
+	// Create wgctrl client
+	client, err := wgctrl.New()
+	if err != nil {
+		return fmt.Errorf("failed to create wgctrl client: %w", err)
+	}
+	defer client.Close()
+
+	// Configure device to update peer
+	config := wgtypes.Config{
+		Peers: []wgtypes.PeerConfig{peerConfig},
+	}
+
+	if err := client.ConfigureDevice(h.interfaceName, config); err != nil {
+		return fmt.Errorf("failed to update peer allowed IPs: %w", err)
+	}
+
 	return nil
 }
 
-// removePeer removes a peer from the WireGuard interface
-func (h *Hub) removePeer(publicKey string) error {
-	// wg set wg0 peer <public-key> remove
-	cmd := exec.Command("wg", "set", h.interfaceName, "peer", publicKey, "remove")
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("failed to remove peer: %w (output: %s)", err, string(output))
+// removePeer removes a peer from the WireGuard interface using wgctrl
+func (h *Hub) removePeer(publicKeyStr string) error {
+	// Parse peer public key
+	peerKey, err := wgtypes.ParseKey(publicKeyStr)
+	if err != nil {
+		return fmt.Errorf("failed to parse peer public key: %w", err)
 	}
+
+	// Remove peer config (Remove=true)
+	remove := true
+	peerConfig := wgtypes.PeerConfig{
+		PublicKey: peerKey,
+		Remove:    remove,
+	}
+
+	// Create wgctrl client
+	client, err := wgctrl.New()
+	if err != nil {
+		return fmt.Errorf("failed to create wgctrl client: %w", err)
+	}
+	defer client.Close()
+
+	// Configure device to remove peer
+	config := wgtypes.Config{
+		Peers: []wgtypes.PeerConfig{peerConfig},
+	}
+
+	if err := client.ConfigureDevice(h.interfaceName, config); err != nil {
+		return fmt.Errorf("failed to remove peer: %w", err)
+	}
+
 	return nil
 }
 
-// getPeerStats retrieves peer statistics from wg show
+// getPeerStats retrieves peer statistics using wgctrl
 func (h *Hub) getPeerStats() []PeerStatus {
-	// For now, return empty stats - we can implement wg show parsing later
-	// wg show wg0 dump
 	peers := make([]PeerStatus, 0, len(h.networks))
 
+	// Create wgctrl client
+	client, err := wgctrl.New()
+	if err != nil {
+		log.Printf("Failed to create wgctrl client for stats: %v", err)
+		return peers
+	}
+	defer client.Close()
+
+	// Get device info
+	device, err := client.Device(h.interfaceName)
+	if err != nil {
+		log.Printf("Failed to get device info: %v", err)
+		return peers
+	}
+
+	// Build map of peer public key -> peer stats
+	peerMap := make(map[string]*wgtypes.Peer)
+	for i := range device.Peers {
+		peer := &device.Peers[i]
+		peerMap[peer.PublicKey.String()] = peer
+	}
+
+	// Match peers to networks and extract stats
 	for _, network := range h.networks {
+		peer, found := peerMap[network.PeerPublicKey]
+
+		var latestHandshake uint64
+		var bytesReceived, bytesSent uint64
+		var persistentKeepalive uint32
+		var endpoint string
+		var allowedIPs []string
+
+		if found {
+			// Convert handshake time to Unix timestamp
+			if !peer.LastHandshakeTime.IsZero() {
+				latestHandshake = uint64(peer.LastHandshakeTime.Unix())
+			}
+
+			bytesReceived = uint64(peer.ReceiveBytes)
+			bytesSent = uint64(peer.TransmitBytes)
+
+			if peer.PersistentKeepaliveInterval > 0 {
+				persistentKeepalive = uint32(peer.PersistentKeepaliveInterval.Seconds())
+			}
+
+			if peer.Endpoint != nil {
+				endpoint = peer.Endpoint.String()
+			}
+
+			// Convert allowed IPs to strings
+			allowedIPs = make([]string, 0, len(peer.AllowedIPs))
+			for _, ipnet := range peer.AllowedIPs {
+				allowedIPs = append(allowedIPs, ipnet.String())
+			}
+		} else {
+			// Peer not found, use network metadata
+			endpoint = network.PeerEndpoint
+			allowedIPs = []string{network.NetworkCIDR}
+			persistentKeepalive = 25
+		}
+
 		peers = append(peers, PeerStatus{
 			NetworkID:           network.ID,
 			PublicKey:           network.PeerPublicKey,
-			Endpoint:            network.PeerEndpoint,
-			AllowedIPs:          []string{network.NetworkCIDR},
-			LatestHandshake:     0, // TODO: parse from wg show
-			BytesReceived:       0, // TODO: parse from wg show
-			BytesSent:           0, // TODO: parse from wg show
-			PersistentKeepalive: 25,
+			Endpoint:            endpoint,
+			AllowedIPs:          allowedIPs,
+			LatestHandshake:     latestHandshake,
+			BytesReceived:       bytesReceived,
+			BytesSent:           bytesSent,
+			PersistentKeepalive: persistentKeepalive,
 		})
 	}
 
 	return peers
 }
 
-// derivePublicKey generates a public key from a private key
-func derivePublicKey(privateKey string) (string, error) {
-	// Pass private key to wg pubkey via stdin (no shell needed)
-	cmd := exec.Command("wg", "pubkey")
-	cmd.Stdin = strings.NewReader(privateKey)
-	output, err := cmd.CombinedOutput()
+// derivePublicKey generates a public key from a private key using curve25519
+func derivePublicKey(privateKeyStr string) (string, error) {
+	// Decode base64 private key
+	privateKeyBytes, err := base64.StdEncoding.DecodeString(privateKeyStr)
 	if err != nil {
-		return "", fmt.Errorf("failed to derive public key: %w (output: %s)", err, string(output))
+		return "", fmt.Errorf("failed to decode private key: %w", err)
 	}
-	return strings.TrimSpace(string(output)), nil
+
+	if len(privateKeyBytes) != 32 {
+		return "", fmt.Errorf("invalid private key length: %d (expected 32)", len(privateKeyBytes))
+	}
+
+	// Derive public key using curve25519
+	var privateKey, publicKey [32]byte
+	copy(privateKey[:], privateKeyBytes)
+	curve25519.ScalarBaseMult(&publicKey, &privateKey)
+
+	// Encode public key as base64
+	return base64.StdEncoding.EncodeToString(publicKey[:]), nil
 }
