@@ -8,11 +8,14 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"runtime"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/vishvananda/netlink"
+	"github.com/vishvananda/netns"
 	"golang.org/x/crypto/curve25519"
 	"golang.zx2c4.com/wireguard/wgctrl"
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
@@ -24,6 +27,7 @@ type Hub struct {
 	publicKey    string
 	listenPort   uint32
 	interfaceName string
+	netnsPath    string                  // Path to container network namespace
 	networks     map[string]*Network // networkID -> Network
 	mu           sync.RWMutex
 }
@@ -60,9 +64,12 @@ type PeerStatus struct {
 	PersistentKeepalive uint32
 }
 
-// NewHub creates a new WireGuard hub interface
+// NewHub creates a new WireGuard hub interface with proper namespace isolation
+// Architecture:
+//   Root Namespace (vminitd):     eth0 (vmnet) ←→ veth-root
+//   Container Namespace (OCI):    veth-cont ←→ wg0
 func NewHub(privateKey string, listenPort uint32, ipAddress, networkCIDR string) (*Hub, error) {
-	log.Printf("Creating WireGuard hub: listen_port=%d ip=%s network=%s", listenPort, ipAddress, networkCIDR)
+	log.Printf("Creating WireGuard hub with namespace isolation: listen_port=%d ip=%s network=%s", listenPort, ipAddress, networkCIDR)
 
 	// Generate public key from private key
 	publicKey, err := derivePublicKey(privateKey)
@@ -70,38 +77,103 @@ func NewHub(privateKey string, listenPort uint32, ipAddress, networkCIDR string)
 		return nil, fmt.Errorf("failed to derive public key: %w", err)
 	}
 
+	// Step 1: Find the container's network namespace
+	log.Printf("Step 1: Finding container network namespace...")
+	netnsPath, err := findContainerNetNs()
+	if err != nil {
+		return nil, fmt.Errorf("failed to find container namespace: %w", err)
+	}
+	log.Printf("Found container namespace: %s", netnsPath)
+
 	hub := &Hub{
 		privateKey:    privateKey,
 		publicKey:     publicKey,
 		listenPort:    listenPort,
 		interfaceName: "wg0",
+		netnsPath:     netnsPath,
 		networks:      make(map[string]*Network),
 	}
 
-	// Create WireGuard interface
-	if err := hub.createInterface(); err != nil {
-		return nil, fmt.Errorf("failed to create interface: %w", err)
+	// Step 2: Create veth pair in root namespace
+	log.Printf("Step 2: Creating veth pair in root namespace...")
+	if err := createVethPair(); err != nil {
+		return nil, fmt.Errorf("failed to create veth pair: %w", err)
 	}
 
-	// Configure private key and listen port
-	if err := hub.configureInterface(); err != nil {
-		hub.destroyInterface()
-		return nil, fmt.Errorf("failed to configure interface: %w", err)
+	// Step 3: Move veth-cont to container namespace
+	log.Printf("Step 3: Moving veth-cont to container namespace...")
+	if err := moveInterfaceToNetNs("veth-cont", netnsPath); err != nil {
+		// Cleanup veth pair on failure
+		if vethRoot, getErr := netlink.LinkByName("veth-root"); getErr == nil {
+			netlink.LinkDel(vethRoot)
+		}
+		return nil, fmt.Errorf("failed to move veth-cont to container namespace: %w", err)
 	}
 
-	// Assign IP address
-	if err := hub.assignIPAddress(ipAddress, networkCIDR); err != nil {
-		hub.destroyInterface()
-		return nil, fmt.Errorf("failed to assign IP address: %w", err)
+	// Step 4: Create wg0 in ROOT namespace (pure tunnel, no IP)
+	// This is critical: encrypted packets arrive on eth0, so wg0's UDP socket must be in the same namespace
+	log.Printf("Step 4: Creating wg0 in root namespace (pure tunnel)...")
+	if err := createWg0InRootNs(privateKey, listenPort); err != nil {
+		// Cleanup veth pair on failure
+		if vethRoot, getErr := netlink.LinkByName("veth-root"); getErr == nil {
+			netlink.LinkDel(vethRoot)
+		}
+		return nil, fmt.Errorf("failed to create wg0 in root namespace: %w", err)
 	}
 
-	// Bring interface up
-	if err := hub.bringInterfaceUp(); err != nil {
-		hub.destroyInterface()
-		return nil, fmt.Errorf("failed to bring interface up: %w", err)
+	// Step 5: Configure veth-root with gateway IP in root namespace
+	// veth-root gets the overlay network gateway (e.g., 172.18.0.1) and routes local container traffic
+	log.Printf("Step 5: Configuring veth-root with gateway IP in root namespace...")
+	if err := configureVethRootWithIP(ipAddress, networkCIDR); err != nil {
+		// Cleanup on failure
+		if vethRoot, getErr := netlink.LinkByName("veth-root"); getErr == nil {
+			netlink.LinkDel(vethRoot)
+		}
+		if wg0, getErr := netlink.LinkByName("wg0"); getErr == nil {
+			netlink.LinkDel(wg0)
+		}
+		return nil, fmt.Errorf("failed to configure veth-root with IP: %w", err)
+	}
+
+	// Step 6: Rename veth-cont to eth0 in container namespace and assign IP
+	// This provides a clean abstraction: container sees normal eth0 with its IP
+	log.Printf("Step 6: Renaming veth-cont to eth0 in container namespace...")
+	if err := renameVethToEth0InContainerNs(netnsPath, ipAddress, networkCIDR); err != nil {
+		// Cleanup on failure
+		if vethRoot, getErr := netlink.LinkByName("veth-root"); getErr == nil {
+			netlink.LinkDel(vethRoot)
+		}
+		if wg0, getErr := netlink.LinkByName("wg0"); getErr == nil {
+			netlink.LinkDel(wg0)
+		}
+		return nil, fmt.Errorf("failed to rename veth-cont to eth0: %w", err)
+	}
+
+	// Step 7: Configure NAT for internet access
+	log.Printf("Step 7: Configuring NAT for internet access...")
+	if err := configureNATForInternet(); err != nil {
+		log.Printf("Warning: failed to configure NAT: %v", err)
+		// Don't fail - NAT might be configured elsewhere
 	}
 
 	log.Printf("WireGuard hub created successfully: interface=%s public_key=%s", hub.interfaceName, hub.publicKey)
+	log.Printf("Architecture:")
+	log.Printf("  Root namespace (vminitd):")
+	log.Printf("    - vmnet eth0 (UDP port 51820) ← encrypted WireGuard packets arrive")
+	log.Printf("    - wg0 (10.254.0.1/32) ← WireGuard endpoint, auto-creates peer routes")
+	log.Printf("    - veth-root (172.18.0.1/%s) ← gateway for overlay network", strings.Split(networkCIDR, "/")[1])
+	log.Printf("    - route: %s/32 dev veth-root ← local container (this VM)", ipAddress)
+	log.Printf("    - route: peer IPs dev wg0 ← auto-created by WireGuard allowed-IPs")
+	log.Printf("  Container namespace:")
+	log.Printf("    - eth0 (renamed veth-cont, %s/%s) ← container overlay IP", ipAddress, strings.Split(networkCIDR, "/")[1])
+	log.Printf("    - default via 172.18.0.1 ← uses veth-root as gateway")
+	log.Printf("  Packet flow (container → peer):")
+	log.Printf("    1. Container sends to peer IP (e.g., 172.18.0.3)")
+	log.Printf("    2. Default route → gateway 172.18.0.1")
+	log.Printf("    3. Veth pair → veth-root in root namespace")
+	log.Printf("    4. Kernel routing finds WireGuard's route: 172.18.0.3/32 dev wg0")
+	log.Printf("    5. Packet goes to wg0, encrypted, sent to peer via UDP")
+	log.Printf("  Key insight: WireGuard routes (172.18.0.x/32 dev wg0) work even though wg0 has 10.254.0.1!")
 
 	return hub, nil
 }
@@ -142,9 +214,12 @@ func (h *Hub) AddNetwork(networkID, peerEndpoint, peerPublicKey, ipAddress, netw
 	}
 
 	// Add IP address to interface (multiple IPs for multi-network)
-	if err := h.addIPAddress(ipAddress, networkCIDR); err != nil {
-		h.removePeer(peerPublicKey)
-		return fmt.Errorf("failed to add IP address: %w", err)
+	// Only if ipAddress is provided (not empty) - allows peer-only additions for mesh config
+	if ipAddress != "" {
+		if err := h.addIPAddress(ipAddress, networkCIDR); err != nil {
+			h.removePeer(peerPublicKey)
+			return fmt.Errorf("failed to add IP address: %w", err)
+		}
 	}
 
 	h.networks[networkID] = network
@@ -164,9 +239,11 @@ func (h *Hub) RemoveNetwork(networkID string) error {
 		return fmt.Errorf("network %s not found", networkID)
 	}
 
-	// Remove IP address from interface
-	if err := h.removeIPAddress(network.IPAddress, network.NetworkCIDR); err != nil {
-		log.Printf("Warning: failed to remove IP address: %v", err)
+	// Remove IP address from interface (only if it was assigned)
+	if network.IPAddress != "" {
+		if err := h.removeIPAddress(network.IPAddress, network.NetworkCIDR); err != nil {
+			log.Printf("Warning: failed to remove IP address: %v", err)
+		}
 	}
 
 	// Remove peer from WireGuard interface
@@ -254,50 +331,34 @@ func (h *Hub) GetStatus() HubStatus {
 	}
 }
 
-// createInterface creates the WireGuard network interface using netlink
-func (h *Hub) createInterface() error {
-	// Create WireGuard link attributes
-	la := netlink.NewLinkAttrs()
-	la.Name = h.interfaceName
-
-	// Create WireGuard link (netlink.Wireguard implements Link interface)
-	link := &netlink.Wireguard{LinkAttrs: la}
-
-	// Add the link to the system
-	if err := netlink.LinkAdd(link); err != nil {
-		return fmt.Errorf("failed to create interface via netlink: %w", err)
-	}
-
-	return nil
-}
-
-// configureInterface sets private key and listen port using wgctrl
-func (h *Hub) configureInterface() error {
-	// Parse private key
-	privateKey, err := wgtypes.ParseKey(h.privateKey)
+// GetVmnetEndpoint returns the container's vmnet endpoint (eth0 IP:port)
+// This is used by peer containers to configure WireGuard peers
+func (h *Hub) GetVmnetEndpoint() (string, error) {
+	// Get eth0 interface via netlink
+	link, err := netlink.LinkByName("eth0")
 	if err != nil {
-		return fmt.Errorf("failed to parse private key: %w", err)
+		return "", fmt.Errorf("failed to get eth0 interface: %w", err)
 	}
 
-	// Create wgctrl client
-	client, err := wgctrl.New()
+	// Get IPv4 addresses on eth0
+	addrs, err := netlink.AddrList(link, syscall.AF_INET)
 	if err != nil {
-		return fmt.Errorf("failed to create wgctrl client: %w", err)
-	}
-	defer client.Close()
-
-	// Configure device with private key and listen port
-	listenPort := int(h.listenPort)
-	config := wgtypes.Config{
-		PrivateKey: &privateKey,
-		ListenPort: &listenPort,
+		return "", fmt.Errorf("failed to get eth0 addresses: %w", err)
 	}
 
-	if err := client.ConfigureDevice(h.interfaceName, config); err != nil {
-		return fmt.Errorf("failed to configure interface: %w", err)
+	if len(addrs) == 0 {
+		return "", fmt.Errorf("no IPv4 addresses found on eth0")
 	}
 
-	return nil
+	// Use first IPv4 address
+	ip := addrs[0].IP.String()
+
+	// Format as IP:port endpoint
+	endpoint := fmt.Sprintf("%s:%d", ip, h.listenPort)
+
+	log.Printf("Vmnet endpoint: %s", endpoint)
+
+	return endpoint, nil
 }
 
 // assignIPAddress adds an IP address to the interface using netlink
@@ -309,16 +370,16 @@ func (h *Hub) assignIPAddress(ipAddress, networkCIDR string) error {
 	}
 	prefixLen := parts[1]
 
-	// Get link by name
-	link, err := netlink.LinkByName(h.interfaceName)
-	if err != nil {
-		return fmt.Errorf("failed to get link %s: %w", h.interfaceName, err)
-	}
-
 	// Parse CIDR address
 	addr, err := netlink.ParseAddr(fmt.Sprintf("%s/%s", ipAddress, prefixLen))
 	if err != nil {
 		return fmt.Errorf("failed to parse address %s/%s: %w", ipAddress, prefixLen, err)
+	}
+
+	// wg0 is in root namespace, operate directly
+	link, err := netlink.LinkByName(h.interfaceName)
+	if err != nil {
+		return fmt.Errorf("failed to get link %s: %w", h.interfaceName, err)
 	}
 
 	// Add address to link
@@ -343,16 +404,16 @@ func (h *Hub) removeIPAddress(ipAddress, networkCIDR string) error {
 	}
 	prefixLen := parts[1]
 
-	// Get link by name
-	link, err := netlink.LinkByName(h.interfaceName)
-	if err != nil {
-		return fmt.Errorf("failed to get link %s: %w", h.interfaceName, err)
-	}
-
 	// Parse CIDR address
 	addr, err := netlink.ParseAddr(fmt.Sprintf("%s/%s", ipAddress, prefixLen))
 	if err != nil {
 		return fmt.Errorf("failed to parse address %s/%s: %w", ipAddress, prefixLen, err)
+	}
+
+	// wg0 is in root namespace, operate directly
+	link, err := netlink.LinkByName(h.interfaceName)
+	if err != nil {
+		return fmt.Errorf("failed to get link %s: %w", h.interfaceName, err)
 	}
 
 	// Remove address from link
@@ -365,7 +426,7 @@ func (h *Hub) removeIPAddress(ipAddress, networkCIDR string) error {
 
 // bringInterfaceUp brings the interface up using netlink
 func (h *Hub) bringInterfaceUp() error {
-	// Get link by name
+	// wg0 is in root namespace, operate directly
 	link, err := netlink.LinkByName(h.interfaceName)
 	if err != nil {
 		return fmt.Errorf("failed to get link %s: %w", h.interfaceName, err)
@@ -381,7 +442,7 @@ func (h *Hub) bringInterfaceUp() error {
 
 // destroyInterface destroys the WireGuard interface using netlink
 func (h *Hub) destroyInterface() error {
-	// Get link by name
+	// wg0 is in root namespace, operate directly
 	link, err := netlink.LinkByName(h.interfaceName)
 	if err != nil {
 		return fmt.Errorf("failed to get link %s: %w", h.interfaceName, err)
@@ -393,6 +454,47 @@ func (h *Hub) destroyInterface() error {
 	}
 
 	return nil
+}
+
+// executeInContainerNs executes a function in the container's network namespace
+// This ensures wgctrl operations can see devices in the container namespace
+func (h *Hub) executeInContainerNs(fn func() error) error {
+	// CRITICAL: Lock goroutine to OS thread for namespace operations
+	// Network namespaces are thread-local. Without this, the Go scheduler can move
+	// our goroutine to a different OS thread during blocking operations (like genetlink
+	// calls in wgctrl), causing us to suddenly be in the wrong namespace.
+	// See: https://github.com/WireGuard/wgctrl-go/issues/58
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
+	// Get current namespace (root namespace) to return to later
+	rootNs, err := netns.Get()
+	if err != nil {
+		return fmt.Errorf("failed to get root namespace: %w", err)
+	}
+	defer rootNs.Close()
+
+	// Open the container namespace
+	containerNs, err := netns.GetFromPath(h.netnsPath)
+	if err != nil {
+		return fmt.Errorf("failed to get container namespace: %w", err)
+	}
+	defer containerNs.Close()
+
+	// Ensure we always return to root namespace
+	defer func() {
+		if err := netns.Set(rootNs); err != nil {
+			log.Printf("Warning: failed to return to root namespace: %v", err)
+		}
+	}()
+
+	// Switch to container namespace
+	if err := netns.Set(containerNs); err != nil {
+		return fmt.Errorf("failed to switch to container namespace: %w", err)
+	}
+
+	// Execute the function in container namespace
+	return fn()
 }
 
 // addPeer adds a peer to the WireGuard interface using wgctrl
@@ -430,7 +532,7 @@ func (h *Hub) addPeer(endpoint, publicKeyStr string, allowedIPs []string) error 
 		PersistentKeepaliveInterval: &keepalive,
 	}
 
-	// Create wgctrl client
+	// wg0 is in root namespace, operate directly
 	client, err := wgctrl.New()
 	if err != nil {
 		return fmt.Errorf("failed to create wgctrl client: %w", err)
@@ -442,9 +544,51 @@ func (h *Hub) addPeer(endpoint, publicKeyStr string, allowedIPs []string) error 
 		Peers: []wgtypes.PeerConfig{peerConfig},
 	}
 
+	log.Printf("DEBUG addPeer: Calling ConfigureDevice to add peer %s with allowed-IPs: %v", peerKey.String(), allowedIPs)
 	if err := client.ConfigureDevice(h.interfaceName, config); err != nil {
 		return fmt.Errorf("failed to add peer: %w", err)
 	}
+	log.Printf("DEBUG addPeer: ConfigureDevice succeeded - peer %s added", peerKey.String())
+
+	// CRITICAL: Manually create routes for allowed-IPs
+	// wgctrl does NOT auto-create routes (unlike wg-quick)
+	// We must explicitly add kernel routes for each allowed-IP
+	wg0Link, err := netlink.LinkByName(h.interfaceName)
+	if err != nil {
+		return fmt.Errorf("failed to get wg0 interface for route creation: %w", err)
+	}
+
+	log.Printf("DEBUG addPeer: Creating routes for allowed-IPs...")
+	for _, allowedIPNet := range allowedIPNets {
+		route := &netlink.Route{
+			LinkIndex: wg0Link.Attrs().Index,
+			Dst:       &allowedIPNet,
+		}
+
+		log.Printf("DEBUG addPeer: Adding route: %s dev wg0", allowedIPNet.String())
+		if err := netlink.RouteAdd(route); err != nil {
+			// Check if route already exists (not a fatal error)
+			if !strings.Contains(err.Error(), "file exists") {
+				return fmt.Errorf("failed to add route for %s: %w", allowedIPNet.String(), err)
+			}
+			log.Printf("DEBUG addPeer: Route %s already exists (skipping)", allowedIPNet.String())
+		} else {
+			log.Printf("DEBUG addPeer: ✓ Route created: %s dev wg0", allowedIPNet.String())
+		}
+	}
+
+	// Debug: Verify the peer was actually added by checking device state
+	device, err := client.Device(h.interfaceName)
+	if err != nil {
+		log.Printf("WARN: Failed to verify peer addition: %v", err)
+	} else {
+		log.Printf("DEBUG addPeer: wg0 now has %d peers", len(device.Peers))
+		for _, p := range device.Peers {
+			log.Printf("DEBUG addPeer: - Peer %s: endpoint=%v allowed-IPs=%v", p.PublicKey.String()[:16], p.Endpoint, p.AllowedIPs)
+		}
+	}
+
+	log.Printf("DEBUG addPeer: Successfully added peer %s with %d allowed-IPs and routes", peerKey.String()[:16], len(allowedIPNets))
 
 	return nil
 }
@@ -475,7 +619,7 @@ func (h *Hub) updatePeerAllowedIPs(publicKeyStr string, allowedCIDRs []string) e
 		AllowedIPs: allowedIPNets,
 	}
 
-	// Create wgctrl client
+	// wg0 is in root namespace, operate directly
 	client, err := wgctrl.New()
 	if err != nil {
 		return fmt.Errorf("failed to create wgctrl client: %w", err)
@@ -502,6 +646,52 @@ func (h *Hub) removePeer(publicKeyStr string) error {
 		return fmt.Errorf("failed to parse peer public key: %w", err)
 	}
 
+	// wg0 is in root namespace, operate directly
+	client, err := wgctrl.New()
+	if err != nil {
+		return fmt.Errorf("failed to create wgctrl client: %w", err)
+	}
+	defer client.Close()
+
+	// Get current device state to find peer's allowed IPs
+	device, err := client.Device(h.interfaceName)
+	if err != nil {
+		return fmt.Errorf("failed to get device state: %w", err)
+	}
+
+	// Find the peer and get its allowed IPs
+	var allowedIPs []net.IPNet
+	for _, peer := range device.Peers {
+		if peer.PublicKey.String() == peerKey.String() {
+			allowedIPs = peer.AllowedIPs
+			break
+		}
+	}
+
+	// Remove routes for this peer's allowed IPs BEFORE removing the peer
+	if len(allowedIPs) > 0 {
+		wg0Link, err := netlink.LinkByName(h.interfaceName)
+		if err != nil {
+			log.Printf("WARN: Failed to get wg0 link for route removal: %v", err)
+		} else {
+			log.Printf("DEBUG removePeer: Removing %d routes for peer %s", len(allowedIPs), peerKey.String()[:16])
+			for _, allowedIP := range allowedIPs {
+				route := &netlink.Route{
+					LinkIndex: wg0Link.Attrs().Index,
+					Dst:       &allowedIP,
+				}
+
+				log.Printf("DEBUG removePeer: Removing route: %s dev wg0", allowedIP.String())
+				if err := netlink.RouteDel(route); err != nil {
+					// Not fatal - route might not exist
+					log.Printf("WARN: Failed to remove route %s: %v", allowedIP.String(), err)
+				} else {
+					log.Printf("DEBUG removePeer: ✓ Route removed: %s dev wg0", allowedIP.String())
+				}
+			}
+		}
+	}
+
 	// Remove peer config (Remove=true)
 	remove := true
 	peerConfig := wgtypes.PeerConfig{
@@ -509,22 +699,17 @@ func (h *Hub) removePeer(publicKeyStr string) error {
 		Remove:    remove,
 	}
 
-	// Create wgctrl client
-	client, err := wgctrl.New()
-	if err != nil {
-		return fmt.Errorf("failed to create wgctrl client: %w", err)
-	}
-	defer client.Close()
-
 	// Configure device to remove peer
 	config := wgtypes.Config{
 		Peers: []wgtypes.PeerConfig{peerConfig},
 	}
 
+	log.Printf("DEBUG removePeer: Removing peer %s from WireGuard device", peerKey.String()[:16])
 	if err := client.ConfigureDevice(h.interfaceName, config); err != nil {
 		return fmt.Errorf("failed to remove peer: %w", err)
 	}
 
+	log.Printf("DEBUG removePeer: Successfully removed peer %s", peerKey.String()[:16])
 	return nil
 }
 
@@ -532,10 +717,10 @@ func (h *Hub) removePeer(publicKeyStr string) error {
 func (h *Hub) getPeerStats() []PeerStatus {
 	peers := make([]PeerStatus, 0, len(h.networks))
 
-	// Create wgctrl client
+	// wg0 is in root namespace, operate directly
 	client, err := wgctrl.New()
 	if err != nil {
-		log.Printf("Failed to create wgctrl client for stats: %v", err)
+		log.Printf("Failed to create wgctrl client: %v", err)
 		return peers
 	}
 	defer client.Close()
