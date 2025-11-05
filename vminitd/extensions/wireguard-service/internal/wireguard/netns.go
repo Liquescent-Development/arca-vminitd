@@ -1,0 +1,581 @@
+// Network namespace utilities for WireGuard container networking
+//
+// This file provides utilities for managing network namespaces to implement
+// the WireGuard namespace architecture where:
+// - eth0 (vmnet) stays in root namespace for internet access
+// - wg0 is created in ROOT namespace (same as eth0) for UDP socket access
+// - veth pair connects root namespace to container namespace
+// - veth-cont is RENAMED to eth0 in container namespace (clean abstraction)
+//
+// Architecture:
+//   Root Namespace (vminitd):                    Container Namespace (OCI):
+//   eth0 (vmnet) ←→ wg0 ←→ veth-root       eth0 (renamed veth-cont, has WireGuard IP)
+//
+// Why wg0 must be in root namespace:
+//   - WireGuard encrypted packets arrive on vmnet eth0 (UDP port 51820)
+//   - WireGuard's UDP socket is created in the same namespace as wg0
+//   - If wg0 is in container namespace, packets on eth0 can't reach it
+//   - Solution: wg0 in root namespace receives packets from eth0
+//
+// Why veth-cont is renamed to eth0:
+//   - Container sees a normal eth0 interface (clean abstraction)
+//   - WireGuard implementation details hidden from container
+//   - Matches user expectations from Docker
+
+package wireguard
+
+import (
+	"fmt"
+	"io/ioutil"
+	"log"
+	"net"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strconv"
+
+	"github.com/google/nftables"
+	"github.com/google/nftables/expr"
+	"github.com/vishvananda/netlink"
+	"github.com/vishvananda/netns"
+	"golang.org/x/sys/unix"
+	"golang.zx2c4.com/wireguard/wgctrl"
+	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
+)
+
+// findContainerNetNs finds the network namespace of the OCI container
+// Apple's Containerization framework creates containers in separate network namespaces.
+// Since each VM has exactly ONE container, we find it by comparing namespace inodes.
+func findContainerNetNs() (string, error) {
+	log.Printf("Searching for container network namespace...")
+
+	// Get our own (vminitd/WireGuard service) network namespace handle
+	ownNs, err := netns.Get()
+	if err != nil {
+		return "", fmt.Errorf("failed to get own network namespace: %w", err)
+	}
+	defer ownNs.Close()
+
+	// Read our own namespace to get the inode for comparison
+	ownNsPath := "/proc/self/ns/net"
+	ownNsLink, err := os.Readlink(ownNsPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to read own namespace link: %w", err)
+	}
+	log.Printf("vminitd network namespace: %s", ownNsLink)
+
+	// Scan /proc for processes
+	procDir, err := os.Open("/proc")
+	if err != nil {
+		return "", fmt.Errorf("failed to open /proc: %w", err)
+	}
+	defer procDir.Close()
+
+	entries, err := procDir.Readdirnames(-1)
+	if err != nil {
+		return "", fmt.Errorf("failed to read /proc: %w", err)
+	}
+
+	for _, entry := range entries {
+		// Skip non-numeric entries (not PIDs)
+		pid, err := strconv.Atoi(entry)
+		if err != nil {
+			continue
+		}
+
+		// Skip low PIDs (vminitd, WireGuard service, and other boot services)
+		if pid <= 100 {
+			continue
+		}
+
+		// Read this process's network namespace
+		netnsPath := filepath.Join("/proc", entry, "ns", "net")
+		processNsLink, err := os.Readlink(netnsPath)
+		if err != nil {
+			continue
+		}
+
+		// Compare namespace inodes - different means it's the container!
+		if processNsLink != ownNsLink {
+			log.Printf("Found container network namespace: pid=%d ns=%s path=%s", pid, processNsLink, netnsPath)
+			return netnsPath, nil
+		}
+	}
+
+	return "", fmt.Errorf("container network namespace not found (no process in different network namespace)")
+}
+
+// createVethPair creates a veth pair in the root namespace
+// veth-root stays in root namespace, veth-cont will be moved to container namespace
+func createVethPair() error {
+	log.Printf("Creating veth pair: veth-root <-> veth-cont")
+
+	veth := &netlink.Veth{
+		LinkAttrs: netlink.LinkAttrs{
+			Name: "veth-root",
+		},
+		PeerName: "veth-cont",
+	}
+
+	if err := netlink.LinkAdd(veth); err != nil {
+		return fmt.Errorf("failed to create veth pair: %w", err)
+	}
+
+	log.Printf("Veth pair created successfully")
+	return nil
+}
+
+// moveInterfaceToNetNs moves a network interface to a different network namespace
+func moveInterfaceToNetNs(linkName string, netnsPath string) error {
+	log.Printf("Moving interface %s to namespace %s", linkName, netnsPath)
+
+	// Get the link
+	link, err := netlink.LinkByName(linkName)
+	if err != nil {
+		return fmt.Errorf("failed to get link %s: %w", linkName, err)
+	}
+
+	// Open the namespace file
+	fd, err := unix.Open(netnsPath, unix.O_RDONLY, 0)
+	if err != nil {
+		return fmt.Errorf("failed to open namespace %s: %w", netnsPath, err)
+	}
+	defer unix.Close(fd)
+
+	// Move the link to the namespace
+	if err := netlink.LinkSetNsFd(link, fd); err != nil {
+		return fmt.Errorf("failed to move link to namespace: %w", err)
+	}
+
+	log.Printf("Interface %s moved to namespace successfully", linkName)
+	return nil
+}
+
+// configureVethRootWithIP assigns the gateway IP to veth-root and adds a route for the container's overlay IP
+// veth-root gets the overlay network's gateway IP as /32 (e.g., 172.18.0.1/32) to avoid creating broad subnet routes.
+// CRITICAL: Must use /32 to prevent kernel from creating a 172.18.0.0/16 connected route that would block
+// WireGuard from auto-creating its /32 peer routes (e.g., 172.18.0.3/32 dev wg0).
+// Containers use this as their default gateway, and the kernel routes peer traffic to wg0 via WireGuard's routes.
+// Note: wg0 has a DIFFERENT IP (10.254.0.1) - WireGuard doesn't need to be in the overlay subnet!
+func configureVethRootWithIP(ipAddress string, networkCIDR string) error {
+	log.Printf("Configuring veth-root with gateway IP and route for container IP %s", ipAddress)
+
+	// Get veth-root interface
+	vethRoot, err := netlink.LinkByName("veth-root")
+	if err != nil {
+		return fmt.Errorf("failed to get veth-root: %w", err)
+	}
+
+	// Calculate gateway IP (first IP in network range: 172.18.0.1 for 172.18.0.0/16)
+	_, ipNet, err := net.ParseCIDR(networkCIDR)
+	if err != nil {
+		return fmt.Errorf("failed to parse network CIDR %s: %w", networkCIDR, err)
+	}
+
+	// Gateway is first usable IP in range (network address + 1)
+	gatewayIP := make(net.IP, len(ipNet.IP))
+	copy(gatewayIP, ipNet.IP)
+	gatewayIP[len(gatewayIP)-1] |= 1 // Set last bit to get .1
+
+	// CRITICAL FIX: Use /32 instead of /16 to prevent broad subnet route
+	// This allows WireGuard to create its peer routes (172.18.0.x/32 dev wg0)
+	gatewayAddr := fmt.Sprintf("%s/32", gatewayIP.String())
+	addr, err := netlink.ParseAddr(gatewayAddr)
+	if err != nil {
+		return fmt.Errorf("failed to parse gateway IP %s: %w", gatewayAddr, err)
+	}
+
+	log.Printf("Assigning gateway IP %s to veth-root (using /32 to avoid subnet route conflict)", gatewayAddr)
+	if err := netlink.AddrAdd(vethRoot, addr); err != nil {
+		return fmt.Errorf("failed to assign gateway IP to veth-root: %w", err)
+	}
+
+	// Bring up veth-root
+	if err := netlink.LinkSetUp(vethRoot); err != nil {
+		return fmt.Errorf("failed to bring up veth-root: %w", err)
+	}
+
+	// Add route for container's overlay IP pointing to veth-root
+	// This allows the root namespace to reach the local container
+	_, containerIPNet, err := net.ParseCIDR(fmt.Sprintf("%s/32", ipAddress))
+	if err != nil {
+		return fmt.Errorf("failed to parse container IP %s: %w", ipAddress, err)
+	}
+
+	route := &netlink.Route{
+		LinkIndex: vethRoot.Attrs().Index,
+		Dst:       containerIPNet,
+	}
+
+	log.Printf("Adding route: %s/32 dev veth-root", ipAddress)
+	if err := netlink.RouteAdd(route); err != nil {
+		return fmt.Errorf("failed to add route for container IP: %w", err)
+	}
+
+	// Enable IP forwarding in root namespace (critical for routing between interfaces)
+	forwardingPath := "/proc/sys/net/ipv4/ip_forward"
+	if err := ioutil.WriteFile(forwardingPath, []byte("1"), 0644); err != nil {
+		return fmt.Errorf("failed to enable IP forwarding: %w", err)
+	}
+
+	log.Printf("veth-root configured successfully: gateway=%s, route=%s/32 dev veth-root", gatewayAddr, ipAddress)
+	return nil
+}
+
+// configureNATForInternet configures NAT/masquerading for internet access
+// This allows container traffic to reach the internet via eth0 (vmnet)
+// SECURITY: Blocks access to control plane vmnet network (192.168.64.0/16)
+// Uses nftables via netlink (no userspace binaries required)
+func configureNATForInternet() error {
+	log.Printf("Configuring NAT for internet access via eth0")
+
+	// Get eth0 interface (vmnet) to detect control plane subnet
+	eth0, err := netlink.LinkByName("eth0")
+	if err != nil {
+		return fmt.Errorf("failed to get eth0 interface: %w", err)
+	}
+
+	// Get eth0's IP address to determine control plane subnet
+	addrs, err := netlink.AddrList(eth0, unix.AF_INET)
+	if err != nil || len(addrs) == 0 {
+		log.Printf("Warning: Could not determine eth0 IP, assuming 192.168.64.0/16 for control plane")
+	}
+
+	// vmnet typically uses 192.168.64.0/16 or 192.168.65.0/24
+	// We'll block the entire 192.168.64.0/16 range to be safe
+	controlPlaneSubnet := "192.168.64.0/16"
+	if len(addrs) > 0 {
+		// Extract the /16 subnet from eth0's IP
+		ip := addrs[0].IP
+		controlPlaneSubnet = fmt.Sprintf("%d.%d.0.0/16", ip[0], ip[1])
+		log.Printf("Detected control plane subnet from eth0: %s", controlPlaneSubnet)
+	}
+
+	// Parse subnets
+	_, containerNet, err := net.ParseCIDR("172.16.0.0/12") // Container overlay networks
+	if err != nil {
+		return fmt.Errorf("failed to parse container subnet: %w", err)
+	}
+
+	_, controlNet, err := net.ParseCIDR(controlPlaneSubnet)
+	if err != nil {
+		return fmt.Errorf("failed to parse control plane subnet: %w", err)
+	}
+
+	// Create nftables connection (talks directly to kernel via netlink)
+	conn, err := nftables.New()
+	if err != nil {
+		return fmt.Errorf("failed to create nftables connection: %w", err)
+	}
+
+	// Create or get "arca-wireguard" table for IPv4
+	table := conn.AddTable(&nftables.Table{
+		Family: nftables.TableFamilyIPv4,
+		Name:   "arca-wireguard",
+	})
+
+	// SECURITY RULE 1: Create FORWARD chain to block control plane access
+	forwardChain := conn.AddChain(&nftables.Chain{
+		Name:     "forward-security",
+		Table:    table,
+		Type:     nftables.ChainTypeFilter,
+		Hooknum:  nftables.ChainHookForward,
+		Priority: nftables.ChainPriorityFilter,
+	})
+
+	// Rule: DROP packets from container networks to control plane
+	// Match: source = 172.16.0.0/12 AND destination = control plane subnet
+	log.Printf("Adding FORWARD rule: DROP 172.16.0.0/12 -> %s (control plane protection)", controlPlaneSubnet)
+	conn.AddRule(&nftables.Rule{
+		Table: table,
+		Chain: forwardChain,
+		Exprs: []expr.Any{
+			// Match source IP: 172.16.0.0/12
+			&expr.Payload{
+				DestRegister: 1,
+				Base:         expr.PayloadBaseNetworkHeader,
+				Offset:       12, // Source IP offset in IPv4 header
+				Len:          4,  // IPv4 address length
+			},
+			&expr.Bitwise{
+				SourceRegister: 1,
+				DestRegister:   1,
+				Len:            4,
+				Mask:           containerNet.Mask, // /12 mask
+				Xor:            []byte{0, 0, 0, 0},
+			},
+			&expr.Cmp{
+				Op:       expr.CmpOpEq,
+				Register: 1,
+				Data:     containerNet.IP.To4(), // 172.16.0.0
+			},
+			// Match destination IP: control plane subnet
+			&expr.Payload{
+				DestRegister: 2,
+				Base:         expr.PayloadBaseNetworkHeader,
+				Offset:       16, // Destination IP offset in IPv4 header
+				Len:          4,
+			},
+			&expr.Bitwise{
+				SourceRegister: 2,
+				DestRegister:   2,
+				Len:            4,
+				Mask:           controlNet.Mask, // /16 mask
+				Xor:            []byte{0, 0, 0, 0},
+			},
+			&expr.Cmp{
+				Op:       expr.CmpOpEq,
+				Register: 2,
+				Data:     controlNet.IP.To4(),
+			},
+			// Verdict: DROP
+			&expr.Verdict{
+				Kind: expr.VerdictDrop,
+			},
+		},
+	})
+
+	// NAT RULE: Create POSTROUTING chain for masquerading
+	postRoutingChain := conn.AddChain(&nftables.Chain{
+		Name:     "postrouting-nat",
+		Table:    table,
+		Type:     nftables.ChainTypeNAT,
+		Hooknum:  nftables.ChainHookPostrouting,
+		Priority: nftables.ChainPriorityNATSource,
+	})
+
+	// Rule: MASQUERADE traffic going out eth0
+	log.Printf("Adding POSTROUTING rule: MASQUERADE on eth0 for internet access")
+	conn.AddRule(&nftables.Rule{
+		Table: table,
+		Chain: postRoutingChain,
+		Exprs: []expr.Any{
+			// Match output interface: eth0
+			&expr.Meta{Key: expr.MetaKeyOIFNAME, Register: 1},
+			&expr.Cmp{
+				Op:       expr.CmpOpEq,
+				Register: 1,
+				Data:     []byte("eth0\x00"), // Null-terminated interface name
+			},
+			// Verdict: MASQUERADE
+			&expr.Masq{},
+		},
+	})
+
+	// Apply all rules to kernel
+	if err := conn.Flush(); err != nil {
+		return fmt.Errorf("failed to apply nftables rules: %w", err)
+	}
+
+	log.Printf("✓ NAT configuration complete: internet access enabled, control plane blocked")
+	log.Printf("  - Created nftables table: arca-wireguard (family ipv4)")
+	log.Printf("  - FORWARD chain: DROP 172.16.0.0/12 → %s", controlPlaneSubnet)
+	log.Printf("  - POSTROUTING chain: MASQUERADE on eth0")
+
+	return nil
+}
+
+// renameVethToEth0InContainerNs renames veth-cont to eth0 in the container namespace
+// and configures it with the WireGuard IP address. This provides a clean abstraction
+// where containers see a normal eth0 interface without knowing about WireGuard.
+// The gateway is set to the first IP in the network (e.g., 172.18.0.1).
+// CRITICAL: Uses /32 address to force all traffic through gateway (no L2 connectivity).
+func renameVethToEth0InContainerNs(netnsPath string, ipAddress string, networkCIDR string) error {
+	log.Printf("Renaming veth-cont to eth0 in container namespace and assigning IP %s", ipAddress)
+
+	// CRITICAL: Lock goroutine to OS thread for namespace operations
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
+	// Get current namespace (root namespace) to return to later
+	rootNs, err := netns.Get()
+	if err != nil {
+		return fmt.Errorf("failed to get root namespace: %w", err)
+	}
+	defer rootNs.Close()
+
+	// Open the container namespace
+	containerNs, err := netns.GetFromPath(netnsPath)
+	if err != nil {
+		return fmt.Errorf("failed to get container namespace: %w", err)
+	}
+	defer containerNs.Close()
+
+	// Ensure we always return to root namespace
+	defer func() {
+		if err := netns.Set(rootNs); err != nil {
+			log.Printf("Warning: failed to return to root namespace: %v", err)
+		}
+	}()
+
+	// Switch to container namespace
+	log.Printf("Switching to container namespace")
+	if err := netns.Set(containerNs); err != nil {
+		return fmt.Errorf("failed to switch to container namespace: %w", err)
+	}
+
+	// Get veth-cont interface
+	link, err := netlink.LinkByName("veth-cont")
+	if err != nil {
+		return fmt.Errorf("failed to get veth-cont interface: %w", err)
+	}
+
+	// Rename veth-cont to eth0
+	log.Printf("Renaming veth-cont to eth0")
+	if err := netlink.LinkSetName(link, "eth0"); err != nil {
+		return fmt.Errorf("failed to rename veth-cont to eth0: %w", err)
+	}
+
+	// Re-fetch the link with new name
+	link, err = netlink.LinkByName("eth0")
+	if err != nil {
+		return fmt.Errorf("failed to get renamed eth0 interface: %w", err)
+	}
+
+	// CRITICAL FIX: Use /32 instead of /16 to avoid L2 connectivity assumption
+	// With /16, kernel creates 172.18.0.0/16 connected route, making container think
+	// peers are on same L2 network and attempt ARP instead of using gateway.
+	// With /32, no subnet route is created, forcing all traffic through gateway.
+	addr, err := netlink.ParseAddr(fmt.Sprintf("%s/32", ipAddress))
+	if err != nil {
+		return fmt.Errorf("failed to parse IP address: %w", err)
+	}
+
+	log.Printf("Assigning IP %s to eth0 in container namespace (using /32 to force gateway routing)", addr.String())
+	if err := netlink.AddrAdd(link, addr); err != nil {
+		return fmt.Errorf("failed to assign IP to eth0: %w", err)
+	}
+
+	// Bring eth0 up
+	log.Printf("Bringing eth0 up in container namespace")
+	if err := netlink.LinkSetUp(link); err != nil {
+		return fmt.Errorf("failed to bring eth0 up: %w", err)
+	}
+
+	// Calculate gateway IP (first IP in network range: 172.18.0.1 for 172.18.0.0/16)
+	_, ipNet, err := net.ParseCIDR(networkCIDR)
+	if err != nil {
+		return fmt.Errorf("failed to parse network CIDR %s: %w", networkCIDR, err)
+	}
+
+	gatewayIP := make(net.IP, len(ipNet.IP))
+	copy(gatewayIP, ipNet.IP)
+	gatewayIP[len(gatewayIP)-1] |= 1 // Set last bit to get .1
+
+	// CRITICAL: With /32 addresses, we must first add a link-scoped route to the gateway
+	// Scope: 253 (RT_SCOPE_LINK) tells kernel gateway is directly reachable (no ARP, point-to-point)
+	// Without this scope, kernel still can't route to gateway despite having a /32 route
+	gatewayRoute := &netlink.Route{
+		Dst:       &net.IPNet{IP: gatewayIP, Mask: net.CIDRMask(32, 32)},
+		LinkIndex: link.Attrs().Index,
+		Scope:     netlink.Scope(253), // RT_SCOPE_LINK - CRITICAL for point-to-point links!
+	}
+
+	log.Printf("Adding link-scoped route to gateway %s/32 dev eth0 scope link", gatewayIP.String())
+	if err := netlink.RouteAdd(gatewayRoute); err != nil {
+		return fmt.Errorf("failed to add route to gateway: %w", err)
+	}
+
+	// Now add default route via gateway (this will work because gateway is now reachable)
+	defaultRoute := &netlink.Route{
+		Dst:       nil, // nil means default route (0.0.0.0/0)
+		Gw:        gatewayIP,
+		LinkIndex: link.Attrs().Index,
+	}
+
+	log.Printf("Adding default route via gateway %s", gatewayIP.String())
+	if err := netlink.RouteAdd(defaultRoute); err != nil {
+		return fmt.Errorf("failed to add default route: %w", err)
+	}
+
+	log.Printf("Successfully configured eth0 in container namespace: ip=%s, gateway=%s", ipAddress, gatewayIP.String())
+	return nil
+}
+
+// createWg0InRootNs creates the wg0 interface in the ROOT namespace
+// This is critical for WireGuard to work: encrypted packets arrive on eth0
+// in the root namespace, so wg0's UDP socket must also be in the root namespace
+// to receive them. Decrypted traffic is routed to the container via veth pair.
+//
+// wg0 is assigned an endpoint IP (10.254.0.1/32) from a reserved range.
+// This IP allows WireGuard to automatically create routes for peer allowed-IPs.
+// IMPORTANT: WireGuard's allowed-IPs can be in a DIFFERENT subnet than wg0's IP!
+// For example: wg0 has 10.254.0.1, but allowed-IPs 172.18.0.3/32 creates route:
+// "172.18.0.3/32 dev wg0" (kernel routes based on dest, not interface IP).
+func createWg0InRootNs(privateKey string, listenPort uint32) error {
+	log.Printf("Creating wg0 in root namespace with endpoint IP: listen_port=%d", listenPort)
+
+	// CRITICAL: Lock goroutine to OS thread for namespace operations
+	// Network namespaces are thread-local. Without this, the Go scheduler can move
+	// our goroutine to a different OS thread during blocking operations (like genetlink
+	// calls in ConfigureDevice), causing us to suddenly be in the wrong namespace.
+	// See: https://github.com/WireGuard/wgctrl-go/issues/58
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
+	// Parse WireGuard configuration
+	privKey, err := wgtypes.ParseKey(privateKey)
+	if err != nil {
+		return fmt.Errorf("failed to parse private key: %w", err)
+	}
+
+	port := int(listenPort)
+	config := wgtypes.Config{
+		PrivateKey: &privKey,
+		ListenPort: &port,
+	}
+
+	// Create WireGuard interface in root namespace (where eth0 is)
+	log.Printf("Creating wg0 interface in root namespace")
+	wg := &netlink.Wireguard{
+		LinkAttrs: netlink.LinkAttrs{
+			Name: "wg0",
+		},
+	}
+
+	if err := netlink.LinkAdd(wg); err != nil {
+		return fmt.Errorf("failed to create wg0 interface: %w", err)
+	}
+
+	// Create wgctrl client in root namespace
+	log.Printf("Creating wgctrl client in root namespace")
+	client, err := wgctrl.New()
+	if err != nil {
+		netlink.LinkDel(wg)
+		return fmt.Errorf("failed to create wgctrl client: %w", err)
+	}
+	defer client.Close()
+
+	// Configure WireGuard device
+	log.Printf("Configuring wg0 with private key and listen port %d", listenPort)
+	if err := client.ConfigureDevice("wg0", config); err != nil {
+		netlink.LinkDel(wg)
+		return fmt.Errorf("failed to configure wg0: %w", err)
+	}
+
+	// Assign endpoint IP to wg0 (10.254.0.1/32)
+	// This is a reserved address separate from the container overlay network
+	// WireGuard will create routes for overlay IPs (172.18.0.x) even though wg0 has 10.254.0.1
+	endpointIP := "10.254.0.1/32"
+	addr, err := netlink.ParseAddr(endpointIP)
+	if err != nil {
+		netlink.LinkDel(wg)
+		return fmt.Errorf("failed to parse endpoint IP %s: %w", endpointIP, err)
+	}
+
+	log.Printf("Assigning endpoint IP %s to wg0", endpointIP)
+	if err := netlink.AddrAdd(wg, addr); err != nil {
+		netlink.LinkDel(wg)
+		return fmt.Errorf("failed to assign endpoint IP to wg0: %w", err)
+	}
+
+	// Bring wg0 up
+	log.Printf("Bringing wg0 up")
+	if err := netlink.LinkSetUp(wg); err != nil {
+		netlink.LinkDel(wg)
+		return fmt.Errorf("failed to bring wg0 up: %w", err)
+	}
+
+	log.Printf("wg0 created successfully in root namespace with endpoint IP %s", endpointIP)
+	return nil
+}
