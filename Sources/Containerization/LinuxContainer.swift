@@ -62,6 +62,10 @@ public final class LinuxContainer: Container, Sendable {
         public var virtualization: Bool = false
         /// Optional file path to store serial boot logs.
         public var bootlog: URL?
+        /// Whether to create a network namespace for the container.
+        /// Required for WireGuard and other network drivers that need namespace isolation.
+        /// vmnet containers don't need this as they use the root namespace.
+        public var useNetworkNamespace: Bool = false
 
         public init() {}
     }
@@ -253,6 +257,11 @@ public final class LinuxContainer: Container, Sendable {
                 period: 100_000
             )
         )
+
+        // Add network namespace if requested
+        if config.useNetworkNamespace {
+            spec.linux?.namespaces.append(LinuxNamespace(type: .network, path: ""))
+        }
 
         return spec
     }

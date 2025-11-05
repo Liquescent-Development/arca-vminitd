@@ -17,6 +17,12 @@ service WireGuardService {
     // Remove a network from this container (deletes wgN interface and ethN)
     rpc RemoveNetwork(RemoveNetworkRequest) returns (RemoveNetworkResponse);
 
+    // Add a peer to a WireGuard interface (for full mesh networking)
+    rpc AddPeer(AddPeerRequest) returns (AddPeerResponse);
+
+    // Remove a peer from a WireGuard interface
+    rpc RemovePeer(RemovePeerRequest) returns (RemovePeerResponse);
+
     // Get WireGuard status and statistics
     rpc GetStatus(GetStatusRequest) returns (GetStatusResponse);
 
@@ -179,4 +185,56 @@ message GetVmnetEndpointResponse {
 
     // vmnet endpoint (eth0 IP:port, e.g., "192.168.65.5:51820")
     string endpoint = 3;
+}
+
+// Request to add a peer to a WireGuard interface
+message AddPeerRequest {
+    // Network ID this peer belongs to
+    string network_id = 1;
+
+    // Network index (which wgN interface to add peer to)
+    uint32 network_index = 2;
+
+    // Peer's WireGuard public key (Base64-encoded)
+    string peer_public_key = 3;
+
+    // Peer's vmnet endpoint (IP:port, e.g., "192.168.65.5:51820")
+    string peer_endpoint = 4;
+
+    // Peer's overlay IP address (for allowed-ips routing, e.g., "172.18.0.3")
+    string peer_ip_address = 5;
+}
+
+message AddPeerResponse {
+    // Success status
+    bool success = 1;
+
+    // Error message if success = false
+    string error = 2;
+
+    // Total number of peers on this interface
+    uint32 total_peers = 3;
+}
+
+// Request to remove a peer from a WireGuard interface
+message RemovePeerRequest {
+    // Network ID this peer belongs to
+    string network_id = 1;
+
+    // Network index (which wgN interface to remove peer from)
+    uint32 network_index = 2;
+
+    // Peer's WireGuard public key to remove (Base64-encoded)
+    string peer_public_key = 3;
+}
+
+message RemovePeerResponse {
+    // Success status
+    bool success = 1;
+
+    // Error message if success = false
+    string error = 2;
+
+    // Remaining number of peers on this interface
+    uint32 remaining_peers = 3;
 }

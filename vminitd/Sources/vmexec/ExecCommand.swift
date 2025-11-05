@@ -63,9 +63,12 @@ struct ExecCommand: ParsableCommand {
         guard pidFd > 0 else {
             throw App.Errno(stage: "pidfd_open(\(parentPid))")
         }
+        // Enter all namespaces of the container's init process
+        // For containers with network namespace (WireGuard): enters that namespace
+        // For containers without (vmnet): stays in root namespace (no-op)
         try Self.enterNS(
             pidFd: pidFd,
-            nsType: CLONE_NEWCGROUP | CLONE_NEWPID | CLONE_NEWUTS | CLONE_NEWNS
+            nsType: CLONE_NEWCGROUP | CLONE_NEWPID | CLONE_NEWUTS | CLONE_NEWNS | CLONE_NEWNET
         )
 
         let processID = fork()

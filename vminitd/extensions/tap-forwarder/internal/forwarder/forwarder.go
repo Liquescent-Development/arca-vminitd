@@ -178,12 +178,16 @@ func (f *Forwarder) AttachNetwork(device string, vsockPort uint32, ipAddress str
 				}
 			}
 
+			// NOTE: DNS configuration is now handled by embedded-DNS (127.0.0.11:53)
+			// which is auto-started by vminitd and receives DNS topology updates via gRPC.
+			// Commenting out /etc/resolv.conf configuration for now.
+			//
 			// Configure DNS from DHCP lease (for eth0 only)
-			if device == "eth0" && len(lease.DNS) > 0 {
-				if err := configureDNS(lease.DNS[0]); err != nil {
-					log.Printf("Warning: Failed to configure DNS from DHCP: %v", err)
-				}
-			}
+			// if device == "eth0" && len(lease.DNS) > 0 {
+			// 	if err := configureDNS(lease.DNS[0]); err != nil {
+			// 		log.Printf("Warning: Failed to configure DNS from DHCP: %v", err)
+			// 	}
+			// }
 
 			// Update attachment with actual IP
 			attachment.IPAddress = actualIP
@@ -202,12 +206,16 @@ func (f *Forwarder) AttachNetwork(device string, vsockPort uint32, ipAddress str
 			actualGateway = gateway
 			actualNetmask = netmask
 
+			// NOTE: DNS configuration is now handled by embedded-DNS (127.0.0.11:53)
+			// which is auto-started by vminitd and receives DNS topology updates via gRPC.
+			// Commenting out /etc/resolv.conf configuration for now.
+			//
 			// Configure DNS to use gateway as nameserver (for eth0 only)
-			if device == "eth0" && gateway != "" {
-				if err := configureDNS(gateway); err != nil {
-					log.Printf("Warning: Failed to configure DNS: %v", err)
-				}
-			}
+			// if device == "eth0" && gateway != "" {
+			// 	if err := configureDNS(gateway); err != nil {
+			// 		log.Printf("Warning: Failed to configure DNS: %v", err)
+			// 	}
+			// }
 
 			// Update attachment with actual IP
 			attachment.IPAddress = actualIP
@@ -368,8 +376,10 @@ func (a *NetworkAttachment) forwardVsockToTAP(ctx context.Context) {
 		}
 
 		// Read 4-byte length prefix from vsock (network byte order)
+		// CRITICAL: Use io.ReadFull to guarantee reading exactly 4 bytes
+		// vsockConn.Read() can return partial reads which corrupts the framing
 		var lengthBuf [4]byte
-		if _, err := a.vsockConn.Read(lengthBuf[:]); err != nil {
+		if _, err := io.ReadFull(a.vsockConn, lengthBuf[:]); err != nil {
 			if err != io.EOF {
 				a.stats.ReceiveErrors.Add(1)
 				log.Printf("vsock read length error on %s: %v", a.Device, err)
@@ -388,8 +398,9 @@ func (a *NetworkAttachment) forwardVsockToTAP(ctx context.Context) {
 		}
 
 		// Read exact packet data from vsock
+		// CRITICAL: Use io.ReadFull to guarantee reading exactly packetLen bytes
 		packet := buf[:packetLen]
-		if _, err := a.vsockConn.Read(packet); err != nil {
+		if _, err := io.ReadFull(a.vsockConn, packet); err != nil {
 			if err != io.EOF {
 				a.stats.ReceiveErrors.Add(1)
 				log.Printf("vsock read data error on %s: %v", a.Device, err)

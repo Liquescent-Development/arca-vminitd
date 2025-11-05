@@ -24,6 +24,8 @@ const _ = grpc.SupportPackageIsVersion9
 const (
 	WireGuardService_AddNetwork_FullMethodName       = "/arca.wireguard.v1.WireGuardService/AddNetwork"
 	WireGuardService_RemoveNetwork_FullMethodName    = "/arca.wireguard.v1.WireGuardService/RemoveNetwork"
+	WireGuardService_AddPeer_FullMethodName          = "/arca.wireguard.v1.WireGuardService/AddPeer"
+	WireGuardService_RemovePeer_FullMethodName       = "/arca.wireguard.v1.WireGuardService/RemovePeer"
 	WireGuardService_GetStatus_FullMethodName        = "/arca.wireguard.v1.WireGuardService/GetStatus"
 	WireGuardService_GetVmnetEndpoint_FullMethodName = "/arca.wireguard.v1.WireGuardService/GetVmnetEndpoint"
 )
@@ -40,6 +42,10 @@ type WireGuardServiceClient interface {
 	AddNetwork(ctx context.Context, in *AddNetworkRequest, opts ...grpc.CallOption) (*AddNetworkResponse, error)
 	// Remove a network from this container (deletes wgN interface and ethN)
 	RemoveNetwork(ctx context.Context, in *RemoveNetworkRequest, opts ...grpc.CallOption) (*RemoveNetworkResponse, error)
+	// Add a peer to a WireGuard interface (for full mesh networking)
+	AddPeer(ctx context.Context, in *AddPeerRequest, opts ...grpc.CallOption) (*AddPeerResponse, error)
+	// Remove a peer from a WireGuard interface
+	RemovePeer(ctx context.Context, in *RemovePeerRequest, opts ...grpc.CallOption) (*RemovePeerResponse, error)
 	// Get WireGuard status and statistics
 	GetStatus(ctx context.Context, in *GetStatusRequest, opts ...grpc.CallOption) (*GetStatusResponse, error)
 	// Get container's vmnet endpoint (eth0 IP:port) for peer configuration
@@ -68,6 +74,26 @@ func (c *wireGuardServiceClient) RemoveNetwork(ctx context.Context, in *RemoveNe
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(RemoveNetworkResponse)
 	err := c.cc.Invoke(ctx, WireGuardService_RemoveNetwork_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *wireGuardServiceClient) AddPeer(ctx context.Context, in *AddPeerRequest, opts ...grpc.CallOption) (*AddPeerResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AddPeerResponse)
+	err := c.cc.Invoke(ctx, WireGuardService_AddPeer_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *wireGuardServiceClient) RemovePeer(ctx context.Context, in *RemovePeerRequest, opts ...grpc.CallOption) (*RemovePeerResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RemovePeerResponse)
+	err := c.cc.Invoke(ctx, WireGuardService_RemovePeer_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -106,6 +132,10 @@ type WireGuardServiceServer interface {
 	AddNetwork(context.Context, *AddNetworkRequest) (*AddNetworkResponse, error)
 	// Remove a network from this container (deletes wgN interface and ethN)
 	RemoveNetwork(context.Context, *RemoveNetworkRequest) (*RemoveNetworkResponse, error)
+	// Add a peer to a WireGuard interface (for full mesh networking)
+	AddPeer(context.Context, *AddPeerRequest) (*AddPeerResponse, error)
+	// Remove a peer from a WireGuard interface
+	RemovePeer(context.Context, *RemovePeerRequest) (*RemovePeerResponse, error)
 	// Get WireGuard status and statistics
 	GetStatus(context.Context, *GetStatusRequest) (*GetStatusResponse, error)
 	// Get container's vmnet endpoint (eth0 IP:port) for peer configuration
@@ -125,6 +155,12 @@ func (UnimplementedWireGuardServiceServer) AddNetwork(context.Context, *AddNetwo
 }
 func (UnimplementedWireGuardServiceServer) RemoveNetwork(context.Context, *RemoveNetworkRequest) (*RemoveNetworkResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method RemoveNetwork not implemented")
+}
+func (UnimplementedWireGuardServiceServer) AddPeer(context.Context, *AddPeerRequest) (*AddPeerResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method AddPeer not implemented")
+}
+func (UnimplementedWireGuardServiceServer) RemovePeer(context.Context, *RemovePeerRequest) (*RemovePeerResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RemovePeer not implemented")
 }
 func (UnimplementedWireGuardServiceServer) GetStatus(context.Context, *GetStatusRequest) (*GetStatusResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetStatus not implemented")
@@ -189,6 +225,42 @@ func _WireGuardService_RemoveNetwork_Handler(srv interface{}, ctx context.Contex
 	return interceptor(ctx, in, info, handler)
 }
 
+func _WireGuardService_AddPeer_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AddPeerRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WireGuardServiceServer).AddPeer(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WireGuardService_AddPeer_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WireGuardServiceServer).AddPeer(ctx, req.(*AddPeerRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WireGuardService_RemovePeer_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RemovePeerRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WireGuardServiceServer).RemovePeer(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WireGuardService_RemovePeer_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WireGuardServiceServer).RemovePeer(ctx, req.(*RemovePeerRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _WireGuardService_GetStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(GetStatusRequest)
 	if err := dec(in); err != nil {
@@ -239,6 +311,14 @@ var WireGuardService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RemoveNetwork",
 			Handler:    _WireGuardService_RemoveNetwork_Handler,
+		},
+		{
+			MethodName: "AddPeer",
+			Handler:    _WireGuardService_AddPeer_Handler,
+		},
+		{
+			MethodName: "RemovePeer",
+			Handler:    _WireGuardService_RemovePeer_Handler,
 		},
 		{
 			MethodName: "GetStatus",

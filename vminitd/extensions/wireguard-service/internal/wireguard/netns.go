@@ -33,6 +33,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"time"
 
 	"github.com/google/nftables"
 	"github.com/google/nftables/expr"
@@ -226,7 +227,12 @@ func configureVethRootWithIP(ipAddress string, networkCIDR string) error {
 // This allows container traffic to reach the internet via eth0 (vmnet)
 // SECURITY: Blocks access to control plane vmnet network (192.168.64.0/16)
 // Uses nftables via netlink (no userspace binaries required)
+// CRITICAL: Must run in ROOT namespace where both veth-root0 and vmnet eth0 exist
 func configureNATForInternet() error {
+	// CRITICAL: Lock goroutine to OS thread for namespace operations
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
 	log.Printf("Configuring NAT for internet access via eth0")
 
 	// Get eth0 interface (vmnet) to detect control plane subnet
@@ -577,5 +583,489 @@ func createWg0InRootNs(privateKey string, listenPort uint32) error {
 	}
 
 	log.Printf("wg0 created successfully in root namespace with endpoint IP %s", endpointIP)
+	return nil
+}
+
+// ============================================================================
+// GENERALIZED HELPER FUNCTIONS FOR MULTI-NETWORK SUPPORT
+// These functions accept interface names as parameters to support wg0, wg1, wg2, etc.
+// ============================================================================
+
+// createVethPairWithNames creates a veth pair with specified names
+func createVethPairWithNames(rootName, contName string) error {
+	log.Printf("Creating veth pair: %s <-> %s", rootName, contName)
+
+	veth := &netlink.Veth{
+		LinkAttrs: netlink.LinkAttrs{
+			Name: rootName,
+		},
+		PeerName: contName,
+	}
+
+	if err := netlink.LinkAdd(veth); err != nil {
+		return fmt.Errorf("failed to create veth pair: %w", err)
+	}
+
+	log.Printf("Veth pair created successfully: %s <-> %s", rootName, contName)
+	return nil
+}
+
+// createWgInterfaceInRootNs creates a WireGuard interface with the specified name in root namespace
+func createWgInterfaceInRootNs(ifName, privateKey string, listenPort uint32) error {
+	log.Printf("Creating %s in root namespace with listen_port=%d", ifName, listenPort)
+
+	// CRITICAL: Lock goroutine to OS thread for namespace operations
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
+	// Parse WireGuard configuration
+	privKey, err := wgtypes.ParseKey(privateKey)
+	if err != nil {
+		return fmt.Errorf("failed to parse private key: %w", err)
+	}
+
+	port := int(listenPort)
+	config := wgtypes.Config{
+		PrivateKey: &privKey,
+		ListenPort: &port,
+	}
+
+	// Create WireGuard interface in root namespace
+	log.Printf("Creating %s interface in root namespace", ifName)
+	wg := &netlink.Wireguard{
+		LinkAttrs: netlink.LinkAttrs{
+			Name: ifName,
+		},
+	}
+
+	if err := netlink.LinkAdd(wg); err != nil {
+		return fmt.Errorf("failed to create %s interface: %w", ifName, err)
+	}
+
+	// Create wgctrl client in root namespace
+	client, err := wgctrl.New()
+	if err != nil {
+		netlink.LinkDel(wg)
+		return fmt.Errorf("failed to create wgctrl client: %w", err)
+	}
+	defer client.Close()
+
+	// Configure WireGuard device
+	log.Printf("Configuring %s with private key and listen port %d", ifName, listenPort)
+	if err := client.ConfigureDevice(ifName, config); err != nil {
+		netlink.LinkDel(wg)
+		return fmt.Errorf("failed to configure %s: %w", ifName, err)
+	}
+
+	// Assign endpoint IP to interface
+	// Use unique IPs for each interface: wg0=10.254.0.1, wg1=10.254.0.2, wg2=10.254.0.3, etc.
+	// Extract index from interface name (wg0 -> 0, wg1 -> 1, etc.)
+	var ifIndex int
+	if _, err := fmt.Sscanf(ifName, "wg%d", &ifIndex); err != nil {
+		ifIndex = 0 // Default to 0 if parsing fails
+	}
+	endpointIP := fmt.Sprintf("10.254.0.%d/32", ifIndex+1)
+
+	addr, err := netlink.ParseAddr(endpointIP)
+	if err != nil {
+		netlink.LinkDel(wg)
+		return fmt.Errorf("failed to parse endpoint IP %s: %w", endpointIP, err)
+	}
+
+	log.Printf("Assigning endpoint IP %s to %s", endpointIP, ifName)
+	if err := netlink.AddrAdd(wg, addr); err != nil {
+		netlink.LinkDel(wg)
+		return fmt.Errorf("failed to assign endpoint IP to %s: %w", ifName, err)
+	}
+
+	// Bring interface up
+	log.Printf("Bringing %s up", ifName)
+	if err := netlink.LinkSetUp(wg); err != nil {
+		netlink.LinkDel(wg)
+		return fmt.Errorf("failed to bring %s up: %w", ifName, err)
+	}
+
+	log.Printf("%s created successfully in root namespace with endpoint IP %s", ifName, endpointIP)
+	return nil
+}
+
+// configureVethRootWithGateway configures a veth root interface with gateway IP
+func configureVethRootWithGateway(vethName, gateway, networkCIDR, containerIP string) error {
+	log.Printf("Configuring %s with gateway IP %s", vethName, gateway)
+
+	// Get veth interface
+	vethRoot, err := netlink.LinkByName(vethName)
+	if err != nil {
+		return fmt.Errorf("failed to get %s: %w", vethName, err)
+	}
+
+	// CRITICAL: Use /32 to prevent broad subnet route
+	// This allows WireGuard to create its peer routes
+	gatewayAddr := fmt.Sprintf("%s/32", gateway)
+	addr, err := netlink.ParseAddr(gatewayAddr)
+	if err != nil {
+		return fmt.Errorf("failed to parse gateway IP %s: %w", gatewayAddr, err)
+	}
+
+	log.Printf("Assigning gateway IP %s to %s (using /32 to avoid subnet route conflict)", gatewayAddr, vethName)
+	if err := netlink.AddrAdd(vethRoot, addr); err != nil {
+		return fmt.Errorf("failed to assign gateway IP to %s: %w", vethName, err)
+	}
+
+	// Bring up interface
+	if err := netlink.LinkSetUp(vethRoot); err != nil {
+		return fmt.Errorf("failed to bring up %s: %w", vethName, err)
+	}
+
+	// CRITICAL: Add route for container's IP pointing to this veth interface
+	// This allows the root namespace to reach the container for inbound traffic (e.g., ping replies)
+	// Without this route, packets destined for the container get dropped
+	_, containerIPNet, err := net.ParseCIDR(fmt.Sprintf("%s/32", containerIP))
+	if err != nil {
+		return fmt.Errorf("failed to parse container IP %s: %w", containerIP, err)
+	}
+
+	route := &netlink.Route{
+		LinkIndex: vethRoot.Attrs().Index,
+		Dst:       containerIPNet,
+	}
+
+	log.Printf("Adding route: %s/32 dev %s (for inbound traffic to container)", containerIP, vethName)
+	if err := netlink.RouteAdd(route); err != nil {
+		return fmt.Errorf("failed to add route for container IP: %w", err)
+	}
+
+	// Enable IP forwarding in root namespace (critical for routing between interfaces)
+	forwardingPath := "/proc/sys/net/ipv4/ip_forward"
+	if err := ioutil.WriteFile(forwardingPath, []byte("1"), 0644); err != nil {
+		return fmt.Errorf("failed to enable IP forwarding: %w", err)
+	}
+
+	log.Printf("%s configured successfully: gateway=%s, route=%s/32 dev %s", vethName, gatewayAddr, containerIP, vethName)
+	return nil
+}
+
+// renameVethToEthNInContainerNs renames a veth interface to ethN in container namespace
+func renameVethToEthNInContainerNs(netnsPath, oldName, newName, ipAddress, networkCIDR string) error {
+	log.Printf("Renaming %s to %s in container namespace and assigning IP %s", oldName, newName, ipAddress)
+
+	// CRITICAL: Lock goroutine to OS thread for namespace operations
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
+	// Get current namespace (root namespace) to return to later
+	rootNs, err := netns.Get()
+	if err != nil {
+		return fmt.Errorf("failed to get root namespace: %w", err)
+	}
+	defer rootNs.Close()
+
+	// Open the container namespace
+	containerNs, err := netns.GetFromPath(netnsPath)
+	if err != nil {
+		return fmt.Errorf("failed to get container namespace: %w", err)
+	}
+	defer containerNs.Close()
+
+	// Ensure we always return to root namespace
+	defer func() {
+		if err := netns.Set(rootNs); err != nil {
+			log.Printf("Warning: failed to return to root namespace: %v", err)
+		}
+	}()
+
+	// Switch to container namespace
+	log.Printf("Switching to container namespace")
+	if err := netns.Set(containerNs); err != nil {
+		return fmt.Errorf("failed to switch to container namespace: %w", err)
+	}
+
+	// Get interface by old name
+	link, err := netlink.LinkByName(oldName)
+	if err != nil {
+		return fmt.Errorf("failed to get %s interface: %w", oldName, err)
+	}
+
+	// Rename interface
+	log.Printf("Renaming %s to %s", oldName, newName)
+	if err := netlink.LinkSetName(link, newName); err != nil {
+		return fmt.Errorf("failed to rename %s to %s: %w", oldName, newName, err)
+	}
+
+	// Re-fetch the link with new name
+	link, err = netlink.LinkByName(newName)
+	if err != nil {
+		return fmt.Errorf("failed to get renamed %s interface: %w", newName, err)
+	}
+
+	// CRITICAL: Use /32 to force all traffic through gateway
+	addr, err := netlink.ParseAddr(fmt.Sprintf("%s/32", ipAddress))
+	if err != nil {
+		return fmt.Errorf("failed to parse IP address: %w", err)
+	}
+
+	log.Printf("Assigning IP %s/32 to %s", ipAddress, newName)
+	if err := netlink.AddrAdd(link, addr); err != nil {
+		return fmt.Errorf("failed to assign IP to %s: %w", newName, err)
+	}
+
+	// Bring interface up
+	log.Printf("Bringing %s up", newName)
+	if err := netlink.LinkSetUp(link); err != nil {
+		return fmt.Errorf("failed to bring %s up: %w", newName, err)
+	}
+
+	// Add default route via gateway for this network
+	// Parse gateway from network CIDR (first IP in range)
+	_, ipNet, err := net.ParseCIDR(networkCIDR)
+	if err != nil {
+		return fmt.Errorf("failed to parse network CIDR %s: %w", networkCIDR, err)
+	}
+
+	gatewayIP := make(net.IP, len(ipNet.IP))
+	copy(gatewayIP, ipNet.IP)
+	gatewayIP[len(gatewayIP)-1] |= 1 // Set last bit to get .1
+
+	// CRITICAL: With /32 addresses, we must first add a link-scoped route to the gateway
+	// Scope: 253 (RT_SCOPE_LINK) tells kernel gateway is directly reachable (no ARP, point-to-point)
+	// Without this scope, kernel can't route to gateway when using /32 addresses
+	gatewayRoute := &netlink.Route{
+		Dst:       &net.IPNet{IP: gatewayIP, Mask: net.CIDRMask(32, 32)},
+		LinkIndex: link.Attrs().Index,
+		Scope:     netlink.Scope(253), // RT_SCOPE_LINK - CRITICAL for point-to-point links!
+	}
+
+	log.Printf("Adding link-scoped route to gateway %s/32 dev %s scope link", gatewayIP.String(), newName)
+	if err := netlink.RouteAdd(gatewayRoute); err != nil {
+		return fmt.Errorf("failed to add route to gateway: %w", err)
+	}
+
+	// Now add route for the network CIDR via gateway (this will work because gateway is now reachable)
+	route := &netlink.Route{
+		LinkIndex: link.Attrs().Index,
+		Dst:       ipNet,
+		Gw:        gatewayIP,
+	}
+
+	log.Printf("Adding route: %s via %s dev %s", networkCIDR, gatewayIP.String(), newName)
+	if err := netlink.RouteAdd(route); err != nil {
+		return fmt.Errorf("failed to add route: %w", err)
+	}
+
+	// Add default route for eth0 (first network) to enable internet access
+	if newName == "eth0" {
+		defaultRoute := &netlink.Route{
+			Dst:       nil, // nil means default route (0.0.0.0/0)
+			Gw:        gatewayIP,
+			LinkIndex: link.Attrs().Index,
+		}
+
+		log.Printf("Adding default route via gateway %s dev %s (internet access)", gatewayIP.String(), newName)
+		if err := netlink.RouteAdd(defaultRoute); err != nil {
+			return fmt.Errorf("failed to add default route: %w", err)
+		}
+	}
+
+	log.Printf("%s renamed to %s successfully with IP %s", oldName, newName, ipAddress)
+	return nil
+}
+
+// addPeerToInterface adds a peer to a specified WireGuard interface
+func addPeerToInterface(ifName, endpoint, publicKeyStr string, allowedIPs []string) error {
+	log.Printf("Adding peer to %s: endpoint=%s allowedIPs=%v", ifName, endpoint, allowedIPs)
+
+	// Parse peer public key
+	peerKey, err := wgtypes.ParseKey(publicKeyStr)
+	if err != nil {
+		return fmt.Errorf("failed to parse peer public key: %w", err)
+	}
+
+	// Parse endpoint
+	udpAddr, err := net.ResolveUDPAddr("udp", endpoint)
+	if err != nil {
+		return fmt.Errorf("failed to parse endpoint: %w", err)
+	}
+
+	// Parse allowed IPs
+	allowedIPNets := make([]net.IPNet, 0, len(allowedIPs))
+	for _, cidr := range allowedIPs {
+		_, ipnet, err := net.ParseCIDR(cidr)
+		if err != nil {
+			return fmt.Errorf("failed to parse allowed IP %s: %w", cidr, err)
+		}
+		allowedIPNets = append(allowedIPNets, *ipnet)
+	}
+
+	// Create wgctrl client
+	client, err := wgctrl.New()
+	if err != nil {
+		return fmt.Errorf("failed to create wgctrl client: %w", err)
+	}
+	defer client.Close()
+
+	// Create peer config
+	keepalive := 25 * time.Second
+	peerConfig := wgtypes.PeerConfig{
+		PublicKey:                   peerKey,
+		Endpoint:                    udpAddr,
+		AllowedIPs:                  allowedIPNets,
+		PersistentKeepaliveInterval: &keepalive,
+		ReplaceAllowedIPs:           false, // Append, don't replace
+	}
+
+	// Configure device with peer
+	config := wgtypes.Config{
+		Peers: []wgtypes.PeerConfig{peerConfig},
+	}
+
+	if err := client.ConfigureDevice(ifName, config); err != nil {
+		return fmt.Errorf("failed to add peer to %s: %w", ifName, err)
+	}
+
+	// Add kernel routes for each allowed IP (so packets route to wg interface)
+	link, err := netlink.LinkByName(ifName)
+	if err != nil {
+		return fmt.Errorf("failed to get %s interface: %w", ifName, err)
+	}
+
+	for _, allowedIP := range allowedIPNets {
+		route := &netlink.Route{
+			LinkIndex: link.Attrs().Index,
+			Dst:       &allowedIP,
+		}
+
+		log.Printf("Adding route for peer: %s dev %s", allowedIP.String(), ifName)
+		if err := netlink.RouteAdd(route); err != nil {
+			// Ignore "file exists" errors (route already present)
+			if !os.IsExist(err) {
+				return fmt.Errorf("failed to add route for %s: %w", allowedIP.String(), err)
+			}
+			log.Printf("Route for %s already exists, skipping", allowedIP.String())
+		}
+	}
+
+	log.Printf("Peer added to %s successfully: endpoint=%s", ifName, endpoint)
+	return nil
+}
+
+// removePeerFromInterface removes a peer from a specified WireGuard interface
+func removePeerFromInterface(ifName, publicKeyStr string) error {
+	log.Printf("Removing peer from %s: publicKey=%s", ifName, publicKeyStr)
+
+	// Parse peer public key
+	peerKey, err := wgtypes.ParseKey(publicKeyStr)
+	if err != nil {
+		return fmt.Errorf("failed to parse peer public key: %w", err)
+	}
+
+	// Create wgctrl client
+	client, err := wgctrl.New()
+	if err != nil {
+		return fmt.Errorf("failed to create wgctrl client: %w", err)
+	}
+	defer client.Close()
+
+	// Get current device config to retrieve peer's allowed IPs (before removal)
+	device, err := client.Device(ifName)
+	if err != nil {
+		return fmt.Errorf("failed to get %s device info: %w", ifName, err)
+	}
+
+	// Find peer and save its allowed IPs for route cleanup
+	var allowedIPs []net.IPNet
+	for _, peer := range device.Peers {
+		if peer.PublicKey == peerKey {
+			allowedIPs = peer.AllowedIPs
+			break
+		}
+	}
+
+	// Create peer config with Remove flag
+	peerConfig := wgtypes.PeerConfig{
+		PublicKey: peerKey,
+		Remove:    true,
+	}
+
+	// Configure device to remove peer
+	config := wgtypes.Config{
+		Peers: []wgtypes.PeerConfig{peerConfig},
+	}
+
+	if err := client.ConfigureDevice(ifName, config); err != nil {
+		return fmt.Errorf("failed to remove peer from %s: %w", ifName, err)
+	}
+
+	// Remove kernel routes for the peer's allowed IPs
+	link, err := netlink.LinkByName(ifName)
+	if err != nil {
+		log.Printf("Warning: failed to get %s interface for route cleanup: %v", ifName, err)
+		// Continue - peer is already removed from WireGuard
+	} else {
+		for _, allowedIP := range allowedIPs {
+			route := &netlink.Route{
+				LinkIndex: link.Attrs().Index,
+				Dst:       &allowedIP,
+			}
+
+			log.Printf("Removing route for peer: %s dev %s", allowedIP.String(), ifName)
+			if err := netlink.RouteDel(route); err != nil {
+				log.Printf("Warning: failed to remove route for %s: %v", allowedIP.String(), err)
+				// Continue - best effort cleanup
+			}
+		}
+	}
+
+	log.Printf("Peer removed from %s successfully", ifName)
+	return nil
+}
+
+// deleteInterfaceInContainerNs deletes an interface in the container namespace
+func deleteInterfaceInContainerNs(netnsPath, ifName string) error {
+	log.Printf("Deleting interface %s in container namespace", ifName)
+
+	// CRITICAL: Lock goroutine to OS thread for namespace operations
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
+	// Get current namespace (root namespace) to return to later
+	rootNs, err := netns.Get()
+	if err != nil {
+		return fmt.Errorf("failed to get root namespace: %w", err)
+	}
+	defer rootNs.Close()
+
+	// Open the container namespace
+	containerNs, err := netns.GetFromPath(netnsPath)
+	if err != nil {
+		return fmt.Errorf("failed to get container namespace: %w", err)
+	}
+	defer containerNs.Close()
+
+	// Ensure we always return to root namespace
+	defer func() {
+		if err := netns.Set(rootNs); err != nil {
+			log.Printf("Warning: failed to return to root namespace: %v", err)
+		}
+	}()
+
+	// Switch to container namespace
+	if err := netns.Set(containerNs); err != nil {
+		return fmt.Errorf("failed to switch to container namespace: %w", err)
+	}
+
+	// Get interface by name
+	link, err := netlink.LinkByName(ifName)
+	if err != nil {
+		// Interface doesn't exist - not an error, might already be deleted
+		log.Printf("Interface %s not found in container namespace (might be already deleted)", ifName)
+		return nil
+	}
+
+	// Delete interface
+	if err := netlink.LinkDel(link); err != nil {
+		return fmt.Errorf("failed to delete %s: %w", ifName, err)
+	}
+
+	log.Printf("Interface %s deleted successfully from container namespace", ifName)
 	return nil
 }

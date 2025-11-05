@@ -145,8 +145,30 @@ struct RunCommand: ParsableCommand {
         let syncPipe = FileHandle(fileDescriptor: 3)
         let ackPipe = FileHandle(fileDescriptor: 4)
 
-        guard unshare(CLONE_NEWPID | CLONE_NEWNS | CLONE_NEWUTS) == 0 else {
-            throw App.Errno(stage: "unshare(pid|mnt|uts)")
+        // Build unshare flags dynamically from OCI spec namespaces
+        // Always create PID, mount, and UTS namespaces (Docker standard)
+        var unshareFlags: Int32 = CLONE_NEWPID | CLONE_NEWNS | CLONE_NEWUTS
+
+        // Add additional namespaces requested in the OCI spec
+        if let linux = spec.linux {
+            for namespace in linux.namespaces {
+                switch namespace.type {
+                case .network:
+                    unshareFlags |= CLONE_NEWNET
+                    log.info("Creating network namespace for container (requested in OCI spec)")
+                case .ipc:
+                    unshareFlags |= CLONE_NEWIPC
+                case .user:
+                    unshareFlags |= CLONE_NEWUSER
+                // .pid, .mount, .uts, .cgroup are handled separately or already included
+                default:
+                    break
+                }
+            }
+        }
+
+        guard unshare(unshareFlags) == 0 else {
+            throw App.Errno(stage: "unshare(namespaces)")
         }
 
         let processID = fork()

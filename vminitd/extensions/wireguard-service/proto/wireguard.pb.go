@@ -803,6 +803,278 @@ func (x *GetVmnetEndpointResponse) GetEndpoint() string {
 	return ""
 }
 
+// Request to add a peer to a WireGuard interface
+type AddPeerRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Network ID this peer belongs to
+	NetworkId string `protobuf:"bytes,1,opt,name=network_id,json=networkId,proto3" json:"network_id,omitempty"`
+	// Network index (which wgN interface to add peer to)
+	NetworkIndex uint32 `protobuf:"varint,2,opt,name=network_index,json=networkIndex,proto3" json:"network_index,omitempty"`
+	// Peer's WireGuard public key (Base64-encoded)
+	PeerPublicKey string `protobuf:"bytes,3,opt,name=peer_public_key,json=peerPublicKey,proto3" json:"peer_public_key,omitempty"`
+	// Peer's vmnet endpoint (IP:port, e.g., "192.168.65.5:51820")
+	PeerEndpoint string `protobuf:"bytes,4,opt,name=peer_endpoint,json=peerEndpoint,proto3" json:"peer_endpoint,omitempty"`
+	// Peer's overlay IP address (for allowed-ips routing, e.g., "172.18.0.3")
+	PeerIpAddress string `protobuf:"bytes,5,opt,name=peer_ip_address,json=peerIpAddress,proto3" json:"peer_ip_address,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AddPeerRequest) Reset() {
+	*x = AddPeerRequest{}
+	mi := &file_proto_wireguard_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AddPeerRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AddPeerRequest) ProtoMessage() {}
+
+func (x *AddPeerRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_wireguard_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AddPeerRequest.ProtoReflect.Descriptor instead.
+func (*AddPeerRequest) Descriptor() ([]byte, []int) {
+	return file_proto_wireguard_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *AddPeerRequest) GetNetworkId() string {
+	if x != nil {
+		return x.NetworkId
+	}
+	return ""
+}
+
+func (x *AddPeerRequest) GetNetworkIndex() uint32 {
+	if x != nil {
+		return x.NetworkIndex
+	}
+	return 0
+}
+
+func (x *AddPeerRequest) GetPeerPublicKey() string {
+	if x != nil {
+		return x.PeerPublicKey
+	}
+	return ""
+}
+
+func (x *AddPeerRequest) GetPeerEndpoint() string {
+	if x != nil {
+		return x.PeerEndpoint
+	}
+	return ""
+}
+
+func (x *AddPeerRequest) GetPeerIpAddress() string {
+	if x != nil {
+		return x.PeerIpAddress
+	}
+	return ""
+}
+
+type AddPeerResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Success status
+	Success bool `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
+	// Error message if success = false
+	Error string `protobuf:"bytes,2,opt,name=error,proto3" json:"error,omitempty"`
+	// Total number of peers on this interface
+	TotalPeers    uint32 `protobuf:"varint,3,opt,name=total_peers,json=totalPeers,proto3" json:"total_peers,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AddPeerResponse) Reset() {
+	*x = AddPeerResponse{}
+	mi := &file_proto_wireguard_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AddPeerResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AddPeerResponse) ProtoMessage() {}
+
+func (x *AddPeerResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_wireguard_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AddPeerResponse.ProtoReflect.Descriptor instead.
+func (*AddPeerResponse) Descriptor() ([]byte, []int) {
+	return file_proto_wireguard_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *AddPeerResponse) GetSuccess() bool {
+	if x != nil {
+		return x.Success
+	}
+	return false
+}
+
+func (x *AddPeerResponse) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
+func (x *AddPeerResponse) GetTotalPeers() uint32 {
+	if x != nil {
+		return x.TotalPeers
+	}
+	return 0
+}
+
+// Request to remove a peer from a WireGuard interface
+type RemovePeerRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Network ID this peer belongs to
+	NetworkId string `protobuf:"bytes,1,opt,name=network_id,json=networkId,proto3" json:"network_id,omitempty"`
+	// Network index (which wgN interface to remove peer from)
+	NetworkIndex uint32 `protobuf:"varint,2,opt,name=network_index,json=networkIndex,proto3" json:"network_index,omitempty"`
+	// Peer's WireGuard public key to remove (Base64-encoded)
+	PeerPublicKey string `protobuf:"bytes,3,opt,name=peer_public_key,json=peerPublicKey,proto3" json:"peer_public_key,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RemovePeerRequest) Reset() {
+	*x = RemovePeerRequest{}
+	mi := &file_proto_wireguard_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RemovePeerRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RemovePeerRequest) ProtoMessage() {}
+
+func (x *RemovePeerRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_wireguard_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RemovePeerRequest.ProtoReflect.Descriptor instead.
+func (*RemovePeerRequest) Descriptor() ([]byte, []int) {
+	return file_proto_wireguard_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *RemovePeerRequest) GetNetworkId() string {
+	if x != nil {
+		return x.NetworkId
+	}
+	return ""
+}
+
+func (x *RemovePeerRequest) GetNetworkIndex() uint32 {
+	if x != nil {
+		return x.NetworkIndex
+	}
+	return 0
+}
+
+func (x *RemovePeerRequest) GetPeerPublicKey() string {
+	if x != nil {
+		return x.PeerPublicKey
+	}
+	return ""
+}
+
+type RemovePeerResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Success status
+	Success bool `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
+	// Error message if success = false
+	Error string `protobuf:"bytes,2,opt,name=error,proto3" json:"error,omitempty"`
+	// Remaining number of peers on this interface
+	RemainingPeers uint32 `protobuf:"varint,3,opt,name=remaining_peers,json=remainingPeers,proto3" json:"remaining_peers,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *RemovePeerResponse) Reset() {
+	*x = RemovePeerResponse{}
+	mi := &file_proto_wireguard_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RemovePeerResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RemovePeerResponse) ProtoMessage() {}
+
+func (x *RemovePeerResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_wireguard_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RemovePeerResponse.ProtoReflect.Descriptor instead.
+func (*RemovePeerResponse) Descriptor() ([]byte, []int) {
+	return file_proto_wireguard_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *RemovePeerResponse) GetSuccess() bool {
+	if x != nil {
+		return x.Success
+	}
+	return false
+}
+
+func (x *RemovePeerResponse) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
+func (x *RemovePeerResponse) GetRemainingPeers() uint32 {
+	if x != nil {
+		return x.RemainingPeers
+	}
+	return 0
+}
+
 var File_proto_wireguard_proto protoreflect.FileDescriptor
 
 const file_proto_wireguard_proto_rawDesc = "" +
@@ -876,11 +1148,35 @@ const file_proto_wireguard_proto_rawDesc = "" +
 	"\x18GetVmnetEndpointResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x14\n" +
 	"\x05error\x18\x02 \x01(\tR\x05error\x12\x1a\n" +
-	"\bendpoint\x18\x03 \x01(\tR\bendpoint2\x96\x03\n" +
+	"\bendpoint\x18\x03 \x01(\tR\bendpoint\"\xc9\x01\n" +
+	"\x0eAddPeerRequest\x12\x1d\n" +
+	"\n" +
+	"network_id\x18\x01 \x01(\tR\tnetworkId\x12#\n" +
+	"\rnetwork_index\x18\x02 \x01(\rR\fnetworkIndex\x12&\n" +
+	"\x0fpeer_public_key\x18\x03 \x01(\tR\rpeerPublicKey\x12#\n" +
+	"\rpeer_endpoint\x18\x04 \x01(\tR\fpeerEndpoint\x12&\n" +
+	"\x0fpeer_ip_address\x18\x05 \x01(\tR\rpeerIpAddress\"b\n" +
+	"\x0fAddPeerResponse\x12\x18\n" +
+	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x14\n" +
+	"\x05error\x18\x02 \x01(\tR\x05error\x12\x1f\n" +
+	"\vtotal_peers\x18\x03 \x01(\rR\n" +
+	"totalPeers\"\x7f\n" +
+	"\x11RemovePeerRequest\x12\x1d\n" +
+	"\n" +
+	"network_id\x18\x01 \x01(\tR\tnetworkId\x12#\n" +
+	"\rnetwork_index\x18\x02 \x01(\rR\fnetworkIndex\x12&\n" +
+	"\x0fpeer_public_key\x18\x03 \x01(\tR\rpeerPublicKey\"m\n" +
+	"\x12RemovePeerResponse\x12\x18\n" +
+	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x14\n" +
+	"\x05error\x18\x02 \x01(\tR\x05error\x12'\n" +
+	"\x0fremaining_peers\x18\x03 \x01(\rR\x0eremainingPeers2\xc3\x04\n" +
 	"\x10WireGuardService\x12Y\n" +
 	"\n" +
 	"AddNetwork\x12$.arca.wireguard.v1.AddNetworkRequest\x1a%.arca.wireguard.v1.AddNetworkResponse\x12b\n" +
-	"\rRemoveNetwork\x12'.arca.wireguard.v1.RemoveNetworkRequest\x1a(.arca.wireguard.v1.RemoveNetworkResponse\x12V\n" +
+	"\rRemoveNetwork\x12'.arca.wireguard.v1.RemoveNetworkRequest\x1a(.arca.wireguard.v1.RemoveNetworkResponse\x12P\n" +
+	"\aAddPeer\x12!.arca.wireguard.v1.AddPeerRequest\x1a\".arca.wireguard.v1.AddPeerResponse\x12Y\n" +
+	"\n" +
+	"RemovePeer\x12$.arca.wireguard.v1.RemovePeerRequest\x1a%.arca.wireguard.v1.RemovePeerResponse\x12V\n" +
 	"\tGetStatus\x12#.arca.wireguard.v1.GetStatusRequest\x1a$.arca.wireguard.v1.GetStatusResponse\x12k\n" +
 	"\x10GetVmnetEndpoint\x12*.arca.wireguard.v1.GetVmnetEndpointRequest\x1a+.arca.wireguard.v1.GetVmnetEndpointResponseB5Z3github.com/vas-solutus/arca-wireguard-service/protob\x06proto3"
 
@@ -896,7 +1192,7 @@ func file_proto_wireguard_proto_rawDescGZIP() []byte {
 	return file_proto_wireguard_proto_rawDescData
 }
 
-var file_proto_wireguard_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
+var file_proto_wireguard_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
 var file_proto_wireguard_proto_goTypes = []any{
 	(*AddNetworkRequest)(nil),        // 0: arca.wireguard.v1.AddNetworkRequest
 	(*AddNetworkResponse)(nil),       // 1: arca.wireguard.v1.AddNetworkResponse
@@ -909,6 +1205,10 @@ var file_proto_wireguard_proto_goTypes = []any{
 	(*TransferStats)(nil),            // 8: arca.wireguard.v1.TransferStats
 	(*GetVmnetEndpointRequest)(nil),  // 9: arca.wireguard.v1.GetVmnetEndpointRequest
 	(*GetVmnetEndpointResponse)(nil), // 10: arca.wireguard.v1.GetVmnetEndpointResponse
+	(*AddPeerRequest)(nil),           // 11: arca.wireguard.v1.AddPeerRequest
+	(*AddPeerResponse)(nil),          // 12: arca.wireguard.v1.AddPeerResponse
+	(*RemovePeerRequest)(nil),        // 13: arca.wireguard.v1.RemovePeerRequest
+	(*RemovePeerResponse)(nil),       // 14: arca.wireguard.v1.RemovePeerResponse
 }
 var file_proto_wireguard_proto_depIdxs = []int32{
 	6,  // 0: arca.wireguard.v1.GetStatusResponse.interfaces:type_name -> arca.wireguard.v1.InterfaceStatus
@@ -916,14 +1216,18 @@ var file_proto_wireguard_proto_depIdxs = []int32{
 	8,  // 2: arca.wireguard.v1.PeerStatus.stats:type_name -> arca.wireguard.v1.TransferStats
 	0,  // 3: arca.wireguard.v1.WireGuardService.AddNetwork:input_type -> arca.wireguard.v1.AddNetworkRequest
 	2,  // 4: arca.wireguard.v1.WireGuardService.RemoveNetwork:input_type -> arca.wireguard.v1.RemoveNetworkRequest
-	4,  // 5: arca.wireguard.v1.WireGuardService.GetStatus:input_type -> arca.wireguard.v1.GetStatusRequest
-	9,  // 6: arca.wireguard.v1.WireGuardService.GetVmnetEndpoint:input_type -> arca.wireguard.v1.GetVmnetEndpointRequest
-	1,  // 7: arca.wireguard.v1.WireGuardService.AddNetwork:output_type -> arca.wireguard.v1.AddNetworkResponse
-	3,  // 8: arca.wireguard.v1.WireGuardService.RemoveNetwork:output_type -> arca.wireguard.v1.RemoveNetworkResponse
-	5,  // 9: arca.wireguard.v1.WireGuardService.GetStatus:output_type -> arca.wireguard.v1.GetStatusResponse
-	10, // 10: arca.wireguard.v1.WireGuardService.GetVmnetEndpoint:output_type -> arca.wireguard.v1.GetVmnetEndpointResponse
-	7,  // [7:11] is the sub-list for method output_type
-	3,  // [3:7] is the sub-list for method input_type
+	11, // 5: arca.wireguard.v1.WireGuardService.AddPeer:input_type -> arca.wireguard.v1.AddPeerRequest
+	13, // 6: arca.wireguard.v1.WireGuardService.RemovePeer:input_type -> arca.wireguard.v1.RemovePeerRequest
+	4,  // 7: arca.wireguard.v1.WireGuardService.GetStatus:input_type -> arca.wireguard.v1.GetStatusRequest
+	9,  // 8: arca.wireguard.v1.WireGuardService.GetVmnetEndpoint:input_type -> arca.wireguard.v1.GetVmnetEndpointRequest
+	1,  // 9: arca.wireguard.v1.WireGuardService.AddNetwork:output_type -> arca.wireguard.v1.AddNetworkResponse
+	3,  // 10: arca.wireguard.v1.WireGuardService.RemoveNetwork:output_type -> arca.wireguard.v1.RemoveNetworkResponse
+	12, // 11: arca.wireguard.v1.WireGuardService.AddPeer:output_type -> arca.wireguard.v1.AddPeerResponse
+	14, // 12: arca.wireguard.v1.WireGuardService.RemovePeer:output_type -> arca.wireguard.v1.RemovePeerResponse
+	5,  // 13: arca.wireguard.v1.WireGuardService.GetStatus:output_type -> arca.wireguard.v1.GetStatusResponse
+	10, // 14: arca.wireguard.v1.WireGuardService.GetVmnetEndpoint:output_type -> arca.wireguard.v1.GetVmnetEndpointResponse
+	9,  // [9:15] is the sub-list for method output_type
+	3,  // [3:9] is the sub-list for method input_type
 	3,  // [3:3] is the sub-list for extension type_name
 	3,  // [3:3] is the sub-list for extension extendee
 	0,  // [0:3] is the sub-list for field type_name
@@ -940,7 +1244,7 @@ func file_proto_wireguard_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_wireguard_proto_rawDesc), len(file_proto_wireguard_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   11,
+			NumMessages:   15,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
