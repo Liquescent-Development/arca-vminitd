@@ -22,12 +22,10 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	WireGuardService_CreateHub_FullMethodName        = "/arca.wireguard.v1.WireGuardService/CreateHub"
 	WireGuardService_AddNetwork_FullMethodName       = "/arca.wireguard.v1.WireGuardService/AddNetwork"
 	WireGuardService_RemoveNetwork_FullMethodName    = "/arca.wireguard.v1.WireGuardService/RemoveNetwork"
-	WireGuardService_UpdateAllowedIPs_FullMethodName = "/arca.wireguard.v1.WireGuardService/UpdateAllowedIPs"
-	WireGuardService_DeleteHub_FullMethodName        = "/arca.wireguard.v1.WireGuardService/DeleteHub"
 	WireGuardService_GetStatus_FullMethodName        = "/arca.wireguard.v1.WireGuardService/GetStatus"
+	WireGuardService_GetVmnetEndpoint_FullMethodName = "/arca.wireguard.v1.WireGuardService/GetVmnetEndpoint"
 )
 
 // WireGuardServiceClient is the client API for WireGuardService service.
@@ -37,18 +35,15 @@ const (
 // WireGuardService manages WireGuard hubs and peer connections for container networking
 // Runs on vsock port 51820 in container's init system namespace
 type WireGuardServiceClient interface {
-	// Create a new WireGuard hub (called once per container, creates wg0 interface)
-	CreateHub(ctx context.Context, in *CreateHubRequest, opts ...grpc.CallOption) (*CreateHubResponse, error)
-	// Add a network to this container's WireGuard hub (configures allowed-ips routing)
+	// Add a network to this container (creates wgN interface + veth pair, renames to ethN)
+	// For multi-network: network_index=0 → wg0/eth0, network_index=1 → wg1/eth1, etc.
 	AddNetwork(ctx context.Context, in *AddNetworkRequest, opts ...grpc.CallOption) (*AddNetworkResponse, error)
-	// Remove a network from this container's WireGuard hub
+	// Remove a network from this container (deletes wgN interface and ethN)
 	RemoveNetwork(ctx context.Context, in *RemoveNetworkRequest, opts ...grpc.CallOption) (*RemoveNetworkResponse, error)
-	// Update allowed IPs for multi-network routing (called when topology changes)
-	UpdateAllowedIPs(ctx context.Context, in *UpdateAllowedIPsRequest, opts ...grpc.CallOption) (*UpdateAllowedIPsResponse, error)
-	// Delete the WireGuard hub (called during container removal)
-	DeleteHub(ctx context.Context, in *DeleteHubRequest, opts ...grpc.CallOption) (*DeleteHubResponse, error)
 	// Get WireGuard status and statistics
 	GetStatus(ctx context.Context, in *GetStatusRequest, opts ...grpc.CallOption) (*GetStatusResponse, error)
+	// Get container's vmnet endpoint (eth0 IP:port) for peer configuration
+	GetVmnetEndpoint(ctx context.Context, in *GetVmnetEndpointRequest, opts ...grpc.CallOption) (*GetVmnetEndpointResponse, error)
 }
 
 type wireGuardServiceClient struct {
@@ -57,16 +52,6 @@ type wireGuardServiceClient struct {
 
 func NewWireGuardServiceClient(cc grpc.ClientConnInterface) WireGuardServiceClient {
 	return &wireGuardServiceClient{cc}
-}
-
-func (c *wireGuardServiceClient) CreateHub(ctx context.Context, in *CreateHubRequest, opts ...grpc.CallOption) (*CreateHubResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(CreateHubResponse)
-	err := c.cc.Invoke(ctx, WireGuardService_CreateHub_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
 }
 
 func (c *wireGuardServiceClient) AddNetwork(ctx context.Context, in *AddNetworkRequest, opts ...grpc.CallOption) (*AddNetworkResponse, error) {
@@ -89,30 +74,20 @@ func (c *wireGuardServiceClient) RemoveNetwork(ctx context.Context, in *RemoveNe
 	return out, nil
 }
 
-func (c *wireGuardServiceClient) UpdateAllowedIPs(ctx context.Context, in *UpdateAllowedIPsRequest, opts ...grpc.CallOption) (*UpdateAllowedIPsResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(UpdateAllowedIPsResponse)
-	err := c.cc.Invoke(ctx, WireGuardService_UpdateAllowedIPs_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *wireGuardServiceClient) DeleteHub(ctx context.Context, in *DeleteHubRequest, opts ...grpc.CallOption) (*DeleteHubResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(DeleteHubResponse)
-	err := c.cc.Invoke(ctx, WireGuardService_DeleteHub_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 func (c *wireGuardServiceClient) GetStatus(ctx context.Context, in *GetStatusRequest, opts ...grpc.CallOption) (*GetStatusResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetStatusResponse)
 	err := c.cc.Invoke(ctx, WireGuardService_GetStatus_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *wireGuardServiceClient) GetVmnetEndpoint(ctx context.Context, in *GetVmnetEndpointRequest, opts ...grpc.CallOption) (*GetVmnetEndpointResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetVmnetEndpointResponse)
+	err := c.cc.Invoke(ctx, WireGuardService_GetVmnetEndpoint_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -126,18 +101,15 @@ func (c *wireGuardServiceClient) GetStatus(ctx context.Context, in *GetStatusReq
 // WireGuardService manages WireGuard hubs and peer connections for container networking
 // Runs on vsock port 51820 in container's init system namespace
 type WireGuardServiceServer interface {
-	// Create a new WireGuard hub (called once per container, creates wg0 interface)
-	CreateHub(context.Context, *CreateHubRequest) (*CreateHubResponse, error)
-	// Add a network to this container's WireGuard hub (configures allowed-ips routing)
+	// Add a network to this container (creates wgN interface + veth pair, renames to ethN)
+	// For multi-network: network_index=0 → wg0/eth0, network_index=1 → wg1/eth1, etc.
 	AddNetwork(context.Context, *AddNetworkRequest) (*AddNetworkResponse, error)
-	// Remove a network from this container's WireGuard hub
+	// Remove a network from this container (deletes wgN interface and ethN)
 	RemoveNetwork(context.Context, *RemoveNetworkRequest) (*RemoveNetworkResponse, error)
-	// Update allowed IPs for multi-network routing (called when topology changes)
-	UpdateAllowedIPs(context.Context, *UpdateAllowedIPsRequest) (*UpdateAllowedIPsResponse, error)
-	// Delete the WireGuard hub (called during container removal)
-	DeleteHub(context.Context, *DeleteHubRequest) (*DeleteHubResponse, error)
 	// Get WireGuard status and statistics
 	GetStatus(context.Context, *GetStatusRequest) (*GetStatusResponse, error)
+	// Get container's vmnet endpoint (eth0 IP:port) for peer configuration
+	GetVmnetEndpoint(context.Context, *GetVmnetEndpointRequest) (*GetVmnetEndpointResponse, error)
 	mustEmbedUnimplementedWireGuardServiceServer()
 }
 
@@ -148,23 +120,17 @@ type WireGuardServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedWireGuardServiceServer struct{}
 
-func (UnimplementedWireGuardServiceServer) CreateHub(context.Context, *CreateHubRequest) (*CreateHubResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method CreateHub not implemented")
-}
 func (UnimplementedWireGuardServiceServer) AddNetwork(context.Context, *AddNetworkRequest) (*AddNetworkResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method AddNetwork not implemented")
 }
 func (UnimplementedWireGuardServiceServer) RemoveNetwork(context.Context, *RemoveNetworkRequest) (*RemoveNetworkResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method RemoveNetwork not implemented")
 }
-func (UnimplementedWireGuardServiceServer) UpdateAllowedIPs(context.Context, *UpdateAllowedIPsRequest) (*UpdateAllowedIPsResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method UpdateAllowedIPs not implemented")
-}
-func (UnimplementedWireGuardServiceServer) DeleteHub(context.Context, *DeleteHubRequest) (*DeleteHubResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method DeleteHub not implemented")
-}
 func (UnimplementedWireGuardServiceServer) GetStatus(context.Context, *GetStatusRequest) (*GetStatusResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetStatus not implemented")
+}
+func (UnimplementedWireGuardServiceServer) GetVmnetEndpoint(context.Context, *GetVmnetEndpointRequest) (*GetVmnetEndpointResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetVmnetEndpoint not implemented")
 }
 func (UnimplementedWireGuardServiceServer) mustEmbedUnimplementedWireGuardServiceServer() {}
 func (UnimplementedWireGuardServiceServer) testEmbeddedByValue()                          {}
@@ -185,24 +151,6 @@ func RegisterWireGuardServiceServer(s grpc.ServiceRegistrar, srv WireGuardServic
 		t.testEmbeddedByValue()
 	}
 	s.RegisterService(&WireGuardService_ServiceDesc, srv)
-}
-
-func _WireGuardService_CreateHub_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(CreateHubRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(WireGuardServiceServer).CreateHub(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: WireGuardService_CreateHub_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(WireGuardServiceServer).CreateHub(ctx, req.(*CreateHubRequest))
-	}
-	return interceptor(ctx, in, info, handler)
 }
 
 func _WireGuardService_AddNetwork_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -241,42 +189,6 @@ func _WireGuardService_RemoveNetwork_Handler(srv interface{}, ctx context.Contex
 	return interceptor(ctx, in, info, handler)
 }
 
-func _WireGuardService_UpdateAllowedIPs_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(UpdateAllowedIPsRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(WireGuardServiceServer).UpdateAllowedIPs(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: WireGuardService_UpdateAllowedIPs_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(WireGuardServiceServer).UpdateAllowedIPs(ctx, req.(*UpdateAllowedIPsRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _WireGuardService_DeleteHub_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(DeleteHubRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(WireGuardServiceServer).DeleteHub(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: WireGuardService_DeleteHub_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(WireGuardServiceServer).DeleteHub(ctx, req.(*DeleteHubRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 func _WireGuardService_GetStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(GetStatusRequest)
 	if err := dec(in); err != nil {
@@ -295,6 +207,24 @@ func _WireGuardService_GetStatus_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
+func _WireGuardService_GetVmnetEndpoint_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetVmnetEndpointRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WireGuardServiceServer).GetVmnetEndpoint(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WireGuardService_GetVmnetEndpoint_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WireGuardServiceServer).GetVmnetEndpoint(ctx, req.(*GetVmnetEndpointRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // WireGuardService_ServiceDesc is the grpc.ServiceDesc for WireGuardService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -302,10 +232,6 @@ var WireGuardService_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "arca.wireguard.v1.WireGuardService",
 	HandlerType: (*WireGuardServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
-		{
-			MethodName: "CreateHub",
-			Handler:    _WireGuardService_CreateHub_Handler,
-		},
 		{
 			MethodName: "AddNetwork",
 			Handler:    _WireGuardService_AddNetwork_Handler,
@@ -315,16 +241,12 @@ var WireGuardService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _WireGuardService_RemoveNetwork_Handler,
 		},
 		{
-			MethodName: "UpdateAllowedIPs",
-			Handler:    _WireGuardService_UpdateAllowedIPs_Handler,
-		},
-		{
-			MethodName: "DeleteHub",
-			Handler:    _WireGuardService_DeleteHub_Handler,
-		},
-		{
 			MethodName: "GetStatus",
 			Handler:    _WireGuardService_GetStatus_Handler,
+		},
+		{
+			MethodName: "GetVmnetEndpoint",
+			Handler:    _WireGuardService_GetVmnetEndpoint_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

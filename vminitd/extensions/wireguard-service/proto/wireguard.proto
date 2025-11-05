@@ -10,53 +10,18 @@ option go_package = "github.com/vas-solutus/arca-wireguard-service/proto";
 // WireGuardService manages WireGuard hubs and peer connections for container networking
 // Runs on vsock port 51820 in container's init system namespace
 service WireGuardService {
-    // Create a new WireGuard hub (called once per container, creates wg0 interface)
-    rpc CreateHub(CreateHubRequest) returns (CreateHubResponse);
-
-    // Add a network to this container's WireGuard hub (configures allowed-ips routing)
+    // Add a network to this container (creates wgN interface + veth pair, renames to ethN)
+    // For multi-network: network_index=0 → wg0/eth0, network_index=1 → wg1/eth1, etc.
     rpc AddNetwork(AddNetworkRequest) returns (AddNetworkResponse);
 
-    // Remove a network from this container's WireGuard hub
+    // Remove a network from this container (deletes wgN interface and ethN)
     rpc RemoveNetwork(RemoveNetworkRequest) returns (RemoveNetworkResponse);
-
-    // Update allowed IPs for multi-network routing (called when topology changes)
-    rpc UpdateAllowedIPs(UpdateAllowedIPsRequest) returns (UpdateAllowedIPsResponse);
-
-    // Delete the WireGuard hub (called during container removal)
-    rpc DeleteHub(DeleteHubRequest) returns (DeleteHubResponse);
 
     // Get WireGuard status and statistics
     rpc GetStatus(GetStatusRequest) returns (GetStatusResponse);
-}
 
-// Request to create a WireGuard hub interface
-message CreateHubRequest {
-    // Private key for this container's WireGuard interface
-    // Base64-encoded Curve25519 key (44 chars)
-    string private_key = 1;
-
-    // Listen port for WireGuard (default: 51820)
-    uint32 listen_port = 2;
-
-    // Container's IP address on first network (assigned to wg0)
-    string ip_address = 3;
-
-    // Network CIDR for the first network (e.g., "172.18.0.0/16")
-    string network_cidr = 4;
-}
-
-message CreateHubResponse {
-    // Success status
-    bool success = 1;
-
-    // Error message if success = false
-    string error = 2;
-
-    // Public key for this container (for peer configuration)
-    string public_key = 3;
-
-    // Interface name created (should be "wg0")
-    string interface = 4;
+    // Get container's vmnet endpoint (eth0 IP:port) for peer configuration
+    rpc GetVmnetEndpoint(GetVmnetEndpointRequest) returns (GetVmnetEndpointResponse);
 }
 
 // Request to add a network to the container
@@ -64,20 +29,30 @@ message AddNetworkRequest {
     // Network ID (Docker network ID)
     string network_id = 1;
 
-    // Peer endpoint (hub's vmnet IP address, e.g., "192.168.65.5:51820")
-    string peer_endpoint = 2;
+    // Network index (0 for first network → wg0/eth0, 1 for second → wg1/eth1, etc.)
+    uint32 network_index = 2;
+
+    // Private key for this container's WireGuard interface (Base64-encoded Curve25519 key)
+    // Each wgN interface gets its own private key
+    string private_key = 3;
+
+    // Listen port for WireGuard (51820 + network_index)
+    uint32 listen_port = 4;
+
+    // Peer endpoint (peer's vmnet IP address, e.g., "192.168.65.5:51820")
+    string peer_endpoint = 5;
 
     // Peer's public key (Base64-encoded)
-    string peer_public_key = 3;
+    string peer_public_key = 6;
 
     // IP address for this container on this network
-    string ip_address = 4;
+    string ip_address = 7;
 
-    // Network CIDR for allowed-ips routing (e.g., "172.19.0.0/16")
-    string network_cidr = 5;
+    // Network CIDR for routing (e.g., "172.18.0.0/16")
+    string network_cidr = 8;
 
-    // Gateway IP for this network (for routing)
-    string gateway = 6;
+    // Gateway IP for this network (e.g., "172.18.0.1")
+    string gateway = 9;
 }
 
 message AddNetworkResponse {
@@ -89,12 +64,24 @@ message AddNetworkResponse {
 
     // Number of networks now configured
     uint32 total_networks = 3;
+
+    // WireGuard interface name created (wg0, wg1, wg2, etc.)
+    string wg_interface = 4;
+
+    // Container interface name (eth0, eth1, eth2, etc.)
+    string eth_interface = 5;
+
+    // Public key for this interface (for peer configuration)
+    string public_key = 6;
 }
 
 // Request to remove a network from the container
 message RemoveNetworkRequest {
     // Network ID to remove
     string network_id = 1;
+
+    // Network index (0, 1, 2, etc.) - identifies which wgN/ethN to remove
+    uint32 network_index = 2;
 }
 
 message RemoveNetworkResponse {
@@ -106,42 +93,6 @@ message RemoveNetworkResponse {
 
     // Number of networks still configured
     uint32 remaining_networks = 3;
-}
-
-// Request to update allowed IPs for multi-network routing
-// Called when containers join/leave networks to update routing table
-message UpdateAllowedIPsRequest {
-    // Complete set of allowed IP ranges for this peer
-    // Each entry is a CIDR (e.g., "172.18.0.0/16", "172.19.0.0/16")
-    repeated string allowed_cidrs = 1;
-
-    // Peer public key to update (identifies which peer to configure)
-    string peer_public_key = 2;
-}
-
-message UpdateAllowedIPsResponse {
-    // Success status
-    bool success = 1;
-
-    // Error message if success = false
-    string error = 2;
-
-    // Number of CIDR ranges now allowed
-    uint32 total_allowed = 3;
-}
-
-// Request to delete the WireGuard hub
-message DeleteHubRequest {
-    // Force deletion even if there are active networks
-    bool force = 1;
-}
-
-message DeleteHubResponse {
-    // Success status
-    bool success = 1;
-
-    // Error message if success = false
-    string error = 2;
 }
 
 // Request WireGuard status
@@ -156,45 +107,51 @@ message GetStatusResponse {
     // Number of networks configured
     uint32 network_count = 2;
 
-    // WireGuard interface status
-    InterfaceStatus interface = 3;
+    // WireGuard interface statuses (one per wgN interface)
+    repeated InterfaceStatus interfaces = 3;
 
-    // Peer statistics (one per network)
+    // Peer statistics (one per peer, grouped by interface)
     repeated PeerStatus peers = 4;
 }
 
 message InterfaceStatus {
-    // Interface name (should be "wg0")
-    string name = 1;
+    // Network ID this interface represents
+    string network_id = 1;
 
-    // Public key
-    string public_key = 2;
+    // Interface name (wg0, wg1, wg2, etc.)
+    string name = 2;
+
+    // Public key for this interface
+    string public_key = 3;
 
     // Listen port
-    uint32 listen_port = 3;
+    uint32 listen_port = 4;
 
     // IP addresses assigned to interface
-    repeated string ip_addresses = 4;
+    repeated string ip_addresses = 5;
 }
 
 message PeerStatus {
     // Network ID this peer represents
     string network_id = 1;
 
+    // Interface name this peer belongs to (wg0, wg1, wg2, etc.)
+    string interface_name = 2;
+
     // Peer public key
-    string public_key = 2;
+    string public_key = 3;
 
     // Peer endpoint (IP:port)
-    string endpoint = 3;
+    string endpoint = 4;
 
     // Allowed IPs for this peer
-    repeated string allowed_ips = 4;
+    repeated string allowed_ips = 5;
 
     // Latest handshake timestamp (Unix seconds, 0 if never)
-    uint64 latest_handshake = 5;
+    uint64 latest_handshake = 6;
 
     // Transfer statistics
-    TransferStats stats = 6;
+    TransferStats stats = 7;
 }
 
 message TransferStats {
@@ -206,4 +163,20 @@ message TransferStats {
 
     // Persistent keepalive interval (seconds, 0 if disabled)
     uint32 persistent_keepalive = 3;
+}
+
+// Request for vmnet endpoint information
+message GetVmnetEndpointRequest {
+    // No parameters needed
+}
+
+message GetVmnetEndpointResponse {
+    // Success status
+    bool success = 1;
+
+    // Error message if success = false
+    string error = 2;
+
+    // vmnet endpoint (eth0 IP:port, e.g., "192.168.65.5:51820")
+    string endpoint = 3;
 }
