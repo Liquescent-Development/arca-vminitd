@@ -28,6 +28,8 @@ const (
 	WireGuardService_RemovePeer_FullMethodName       = "/arca.wireguard.v1.WireGuardService/RemovePeer"
 	WireGuardService_GetStatus_FullMethodName        = "/arca.wireguard.v1.WireGuardService/GetStatus"
 	WireGuardService_GetVmnetEndpoint_FullMethodName = "/arca.wireguard.v1.WireGuardService/GetVmnetEndpoint"
+	WireGuardService_PublishPort_FullMethodName      = "/arca.wireguard.v1.WireGuardService/PublishPort"
+	WireGuardService_UnpublishPort_FullMethodName    = "/arca.wireguard.v1.WireGuardService/UnpublishPort"
 )
 
 // WireGuardServiceClient is the client API for WireGuardService service.
@@ -50,6 +52,10 @@ type WireGuardServiceClient interface {
 	GetStatus(ctx context.Context, in *GetStatusRequest, opts ...grpc.CallOption) (*GetStatusResponse, error)
 	// Get container's vmnet endpoint (eth0 IP:port) for peer configuration
 	GetVmnetEndpoint(ctx context.Context, in *GetVmnetEndpointRequest, opts ...grpc.CallOption) (*GetVmnetEndpointResponse, error)
+	// Publish a port (create DNAT rule for host port → container port)
+	PublishPort(ctx context.Context, in *PublishPortRequest, opts ...grpc.CallOption) (*PublishPortResponse, error)
+	// Unpublish a port (remove DNAT rule)
+	UnpublishPort(ctx context.Context, in *UnpublishPortRequest, opts ...grpc.CallOption) (*UnpublishPortResponse, error)
 }
 
 type wireGuardServiceClient struct {
@@ -120,6 +126,26 @@ func (c *wireGuardServiceClient) GetVmnetEndpoint(ctx context.Context, in *GetVm
 	return out, nil
 }
 
+func (c *wireGuardServiceClient) PublishPort(ctx context.Context, in *PublishPortRequest, opts ...grpc.CallOption) (*PublishPortResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PublishPortResponse)
+	err := c.cc.Invoke(ctx, WireGuardService_PublishPort_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *wireGuardServiceClient) UnpublishPort(ctx context.Context, in *UnpublishPortRequest, opts ...grpc.CallOption) (*UnpublishPortResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UnpublishPortResponse)
+	err := c.cc.Invoke(ctx, WireGuardService_UnpublishPort_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // WireGuardServiceServer is the server API for WireGuardService service.
 // All implementations must embed UnimplementedWireGuardServiceServer
 // for forward compatibility.
@@ -140,6 +166,10 @@ type WireGuardServiceServer interface {
 	GetStatus(context.Context, *GetStatusRequest) (*GetStatusResponse, error)
 	// Get container's vmnet endpoint (eth0 IP:port) for peer configuration
 	GetVmnetEndpoint(context.Context, *GetVmnetEndpointRequest) (*GetVmnetEndpointResponse, error)
+	// Publish a port (create DNAT rule for host port → container port)
+	PublishPort(context.Context, *PublishPortRequest) (*PublishPortResponse, error)
+	// Unpublish a port (remove DNAT rule)
+	UnpublishPort(context.Context, *UnpublishPortRequest) (*UnpublishPortResponse, error)
 	mustEmbedUnimplementedWireGuardServiceServer()
 }
 
@@ -167,6 +197,12 @@ func (UnimplementedWireGuardServiceServer) GetStatus(context.Context, *GetStatus
 }
 func (UnimplementedWireGuardServiceServer) GetVmnetEndpoint(context.Context, *GetVmnetEndpointRequest) (*GetVmnetEndpointResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetVmnetEndpoint not implemented")
+}
+func (UnimplementedWireGuardServiceServer) PublishPort(context.Context, *PublishPortRequest) (*PublishPortResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method PublishPort not implemented")
+}
+func (UnimplementedWireGuardServiceServer) UnpublishPort(context.Context, *UnpublishPortRequest) (*UnpublishPortResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UnpublishPort not implemented")
 }
 func (UnimplementedWireGuardServiceServer) mustEmbedUnimplementedWireGuardServiceServer() {}
 func (UnimplementedWireGuardServiceServer) testEmbeddedByValue()                          {}
@@ -297,6 +333,42 @@ func _WireGuardService_GetVmnetEndpoint_Handler(srv interface{}, ctx context.Con
 	return interceptor(ctx, in, info, handler)
 }
 
+func _WireGuardService_PublishPort_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PublishPortRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WireGuardServiceServer).PublishPort(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WireGuardService_PublishPort_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WireGuardServiceServer).PublishPort(ctx, req.(*PublishPortRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WireGuardService_UnpublishPort_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UnpublishPortRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WireGuardServiceServer).UnpublishPort(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WireGuardService_UnpublishPort_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WireGuardServiceServer).UnpublishPort(ctx, req.(*UnpublishPortRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // WireGuardService_ServiceDesc is the grpc.ServiceDesc for WireGuardService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -327,6 +399,14 @@ var WireGuardService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetVmnetEndpoint",
 			Handler:    _WireGuardService_GetVmnetEndpoint_Handler,
+		},
+		{
+			MethodName: "PublishPort",
+			Handler:    _WireGuardService_PublishPort_Handler,
+		},
+		{
+			MethodName: "UnpublishPort",
+			Handler:    _WireGuardService_UnpublishPort_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

@@ -297,6 +297,64 @@ func (s *server) RemovePeer(ctx context.Context, req *pb.RemovePeerRequest) (*pb
 	}, nil
 }
 
+// PublishPort publishes a container port on the vmnet interface (Phase 4.1)
+// Creates DNAT and INPUT rules to expose container_ip:container_port on vmnet_ip:host_port
+func (s *server) PublishPort(ctx context.Context, req *pb.PublishPortRequest) (*pb.PublishPortResponse, error) {
+	log.Printf("PublishPort: protocol=%s host_port=%d container_ip=%s container_port=%d",
+		req.Protocol, req.HostPort, req.ContainerIp, req.ContainerPort)
+
+	s.mu.RLock()
+	hub := s.hub
+	s.mu.RUnlock()
+
+	if hub == nil {
+		return &pb.PublishPortResponse{
+			Success: false,
+			Error:   "hub not initialized",
+		}, nil
+	}
+
+	if err := wireguard.PublishPort(req.Protocol, req.HostPort, req.ContainerIp, req.ContainerPort); err != nil {
+		log.Printf("PublishPort failed: %v", err)
+		return &pb.PublishPortResponse{
+			Success: false,
+			Error:   err.Error(),
+		}, nil
+	}
+
+	return &pb.PublishPortResponse{
+		Success: true,
+	}, nil
+}
+
+// UnpublishPort removes port mapping rules from vmnet interface (Phase 4.1)
+func (s *server) UnpublishPort(ctx context.Context, req *pb.UnpublishPortRequest) (*pb.UnpublishPortResponse, error) {
+	log.Printf("UnpublishPort: protocol=%s host_port=%d", req.Protocol, req.HostPort)
+
+	s.mu.RLock()
+	hub := s.hub
+	s.mu.RUnlock()
+
+	if hub == nil {
+		return &pb.UnpublishPortResponse{
+			Success: false,
+			Error:   "hub not initialized",
+		}, nil
+	}
+
+	if err := wireguard.UnpublishPort(req.Protocol, req.HostPort); err != nil {
+		log.Printf("UnpublishPort failed: %v", err)
+		return &pb.UnpublishPortResponse{
+			Success: false,
+			Error:   err.Error(),
+		}, nil
+	}
+
+	return &pb.UnpublishPortResponse{
+		Success: true,
+	}, nil
+}
+
 func main() {
 	log.Printf("Arca WireGuard Service v%s starting...", VERSION)
 
@@ -321,6 +379,13 @@ func main() {
 	}()
 
 	log.Printf("DNS server started on 0.0.0.0:53 (accessible on gateway IPs, blocked from control plane)")
+
+	// Configure default vmnet security (Phase 4.1)
+	// This blocks all vmnet INPUT except WireGuard UDP traffic
+	if err := wireguard.ConfigureDefaultVmnetSecurity(); err != nil {
+		log.Fatalf("Failed to configure vmnet security: %v", err)
+	}
+	log.Printf("vmnet security configured (underlay secured, only WireGuard UDP allowed)")
 
 	// Listen on vsock for WireGuard gRPC API
 	listener, err := vsock.Listen(WIREGUARD_PORT, nil)

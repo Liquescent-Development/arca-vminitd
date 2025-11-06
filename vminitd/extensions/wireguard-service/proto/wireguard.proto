@@ -28,6 +28,12 @@ service WireGuardService {
 
     // Get container's vmnet endpoint (eth0 IP:port) for peer configuration
     rpc GetVmnetEndpoint(GetVmnetEndpointRequest) returns (GetVmnetEndpointResponse);
+
+    // Publish a port (create DNAT rule for host port → container port)
+    rpc PublishPort(PublishPortRequest) returns (PublishPortResponse);
+
+    // Unpublish a port (remove DNAT rule)
+    rpc UnpublishPort(UnpublishPortRequest) returns (UnpublishPortResponse);
 }
 
 // Request to add a network to the container
@@ -249,4 +255,44 @@ message RemovePeerResponse {
 
     // Remaining number of peers on this interface
     uint32 remaining_peers = 3;
+}
+
+// Request to publish a port (expose container port on host)
+message PublishPortRequest {
+    // Protocol ("tcp" or "udp")
+    string protocol = 1;
+
+    // Host port (port on vmnet interface that macOS host will connect to)
+    uint32 host_port = 2;
+
+    // Container overlay IP address (WireGuard IP, e.g., "172.18.0.2")
+    string container_ip = 3;
+
+    // Container port (port inside container to DNAT to)
+    uint32 container_port = 4;
+}
+
+message PublishPortResponse {
+    // Success status
+    bool success = 1;
+
+    // Error message if success = false
+    string error = 2;
+}
+
+// Request to unpublish a port (remove port exposure)
+message UnpublishPortRequest {
+    // Protocol ("tcp" or "udp")
+    string protocol = 1;
+
+    // Host port to unpublish
+    uint32 host_port = 2;
+}
+
+message UnpublishPortResponse {
+    // Success status
+    bool success = 1;
+
+    // Error message if success = false
+    string error = 2;
 }
