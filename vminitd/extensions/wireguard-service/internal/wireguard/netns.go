@@ -25,6 +25,7 @@
 package wireguard
 
 import (
+	"bytes"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -44,16 +45,17 @@ import (
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 )
 
-// findContainerNetNs finds the network namespace of the OCI container
+// findContainerNetNs finds the network namespace of the OCI container and extracts container ID
 // Apple's Containerization framework creates containers in separate network namespaces.
 // Since each VM has exactly ONE container, we find it by comparing namespace inodes.
-func findContainerNetNs() (string, error) {
+// Returns (netnsPath, containerID, error)
+func findContainerNetNs() (string, string, error) {
 	log.Printf("Searching for container network namespace...")
 
 	// Get our own (vminitd/WireGuard service) network namespace handle
 	ownNs, err := netns.Get()
 	if err != nil {
-		return "", fmt.Errorf("failed to get own network namespace: %w", err)
+		return "", "", fmt.Errorf("failed to get own network namespace: %w", err)
 	}
 	defer ownNs.Close()
 
@@ -61,20 +63,20 @@ func findContainerNetNs() (string, error) {
 	ownNsPath := "/proc/self/ns/net"
 	ownNsLink, err := os.Readlink(ownNsPath)
 	if err != nil {
-		return "", fmt.Errorf("failed to read own namespace link: %w", err)
+		return "", "", fmt.Errorf("failed to read own namespace link: %w", err)
 	}
 	log.Printf("vminitd network namespace: %s", ownNsLink)
 
 	// Scan /proc for processes
 	procDir, err := os.Open("/proc")
 	if err != nil {
-		return "", fmt.Errorf("failed to open /proc: %w", err)
+		return "", "", fmt.Errorf("failed to open /proc: %w", err)
 	}
 	defer procDir.Close()
 
 	entries, err := procDir.Readdirnames(-1)
 	if err != nil {
-		return "", fmt.Errorf("failed to read /proc: %w", err)
+		return "", "", fmt.Errorf("failed to read /proc: %w", err)
 	}
 
 	for _, entry := range entries {
@@ -99,11 +101,29 @@ func findContainerNetNs() (string, error) {
 		// Compare namespace inodes - different means it's the container!
 		if processNsLink != ownNsLink {
 			log.Printf("Found container network namespace: pid=%d ns=%s path=%s", pid, processNsLink, netnsPath)
-			return netnsPath, nil
+
+			// Extract container ID from process environment
+			containerID := ""
+			environPath := filepath.Join("/proc", entry, "environ")
+			if environData, err := ioutil.ReadFile(environPath); err == nil {
+				// environ is null-separated key=value pairs
+				for _, env := range bytes.Split(environData, []byte{0}) {
+					if bytes.HasPrefix(env, []byte("ARCA_CONTAINER_ID=")) {
+						containerID = string(bytes.TrimPrefix(env, []byte("ARCA_CONTAINER_ID=")))
+						break
+					}
+				}
+			}
+
+			if containerID != "" {
+				log.Printf("Found container ID from environment: %s", containerID)
+			}
+
+			return netnsPath, containerID, nil
 		}
 	}
 
-	return "", fmt.Errorf("container network namespace not found (no process in different network namespace)")
+	return "", "", fmt.Errorf("container network namespace not found (no process in different network namespace)")
 }
 
 // createVethPair creates a veth pair in the root namespace
@@ -341,6 +361,60 @@ func configureNATForInternet() error {
 		},
 	})
 
+	// SECURITY RULE 2: Create INPUT chain to block DNS from control plane
+	inputChain := conn.AddChain(&nftables.Chain{
+		Name:     "input-security",
+		Table:    table,
+		Type:     nftables.ChainTypeFilter,
+		Hooknum:  nftables.ChainHookInput,
+		Priority: nftables.ChainPriorityFilter,
+	})
+
+	// Rule: DROP DNS queries (port 53) arriving on eth0 (control plane)
+	// This blocks host access to DNS while allowing container access via veth
+	log.Printf("Adding INPUT rule: DROP port 53 from eth0 (block host DNS access)")
+	conn.AddRule(&nftables.Rule{
+		Table: table,
+		Chain: inputChain,
+		Exprs: []expr.Any{
+			// Match input interface: eth0 (control plane)
+			&expr.Meta{Key: expr.MetaKeyIIFNAME, Register: 1},
+			&expr.Cmp{
+				Op:       expr.CmpOpEq,
+				Register: 1,
+				Data:     []byte("eth0\x00"), // Null-terminated interface name
+			},
+			// Match protocol: UDP (17)
+			&expr.Payload{
+				DestRegister: 1,
+				Base:         expr.PayloadBaseNetworkHeader,
+				Offset:       9,
+				Len:          1,
+			},
+			&expr.Cmp{
+				Op:       expr.CmpOpEq,
+				Register: 1,
+				Data:     []byte{unix.IPPROTO_UDP},
+			},
+			// Match destination port: 53 (DNS)
+			&expr.Payload{
+				DestRegister: 1,
+				Base:         expr.PayloadBaseTransportHeader,
+				Offset:       2,
+				Len:          2,
+			},
+			&expr.Cmp{
+				Op:       expr.CmpOpEq,
+				Register: 1,
+				Data:     []byte{0, 53}, // Port 53 in big-endian
+			},
+			// Verdict: DROP
+			&expr.Verdict{
+				Kind: expr.VerdictDrop,
+			},
+		},
+	})
+
 	// NAT RULE: Create POSTROUTING chain for masquerading
 	postRoutingChain := conn.AddChain(&nftables.Chain{
 		Name:     "postrouting-nat",
@@ -375,214 +449,10 @@ func configureNATForInternet() error {
 
 	log.Printf("✓ NAT configuration complete: internet access enabled, control plane blocked")
 	log.Printf("  - Created nftables table: arca-wireguard (family ipv4)")
+	log.Printf("  - INPUT chain: DROP port 53 from eth0 (block host DNS access)")
 	log.Printf("  - FORWARD chain: DROP 172.16.0.0/12 → %s", controlPlaneSubnet)
 	log.Printf("  - POSTROUTING chain: MASQUERADE on eth0")
 
-	return nil
-}
-
-// renameVethToEth0InContainerNs renames veth-cont to eth0 in the container namespace
-// and configures it with the WireGuard IP address. This provides a clean abstraction
-// where containers see a normal eth0 interface without knowing about WireGuard.
-// The gateway is set to the first IP in the network (e.g., 172.18.0.1).
-// CRITICAL: Uses /32 address to force all traffic through gateway (no L2 connectivity).
-func renameVethToEth0InContainerNs(netnsPath string, ipAddress string, networkCIDR string) error {
-	log.Printf("Renaming veth-cont to eth0 in container namespace and assigning IP %s", ipAddress)
-
-	// CRITICAL: Lock goroutine to OS thread for namespace operations
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
-
-	// Get current namespace (root namespace) to return to later
-	rootNs, err := netns.Get()
-	if err != nil {
-		return fmt.Errorf("failed to get root namespace: %w", err)
-	}
-	defer rootNs.Close()
-
-	// Open the container namespace
-	containerNs, err := netns.GetFromPath(netnsPath)
-	if err != nil {
-		return fmt.Errorf("failed to get container namespace: %w", err)
-	}
-	defer containerNs.Close()
-
-	// Ensure we always return to root namespace
-	defer func() {
-		if err := netns.Set(rootNs); err != nil {
-			log.Printf("Warning: failed to return to root namespace: %v", err)
-		}
-	}()
-
-	// Switch to container namespace
-	log.Printf("Switching to container namespace")
-	if err := netns.Set(containerNs); err != nil {
-		return fmt.Errorf("failed to switch to container namespace: %w", err)
-	}
-
-	// Get veth-cont interface
-	link, err := netlink.LinkByName("veth-cont")
-	if err != nil {
-		return fmt.Errorf("failed to get veth-cont interface: %w", err)
-	}
-
-	// Rename veth-cont to eth0
-	log.Printf("Renaming veth-cont to eth0")
-	if err := netlink.LinkSetName(link, "eth0"); err != nil {
-		return fmt.Errorf("failed to rename veth-cont to eth0: %w", err)
-	}
-
-	// Re-fetch the link with new name
-	link, err = netlink.LinkByName("eth0")
-	if err != nil {
-		return fmt.Errorf("failed to get renamed eth0 interface: %w", err)
-	}
-
-	// CRITICAL FIX: Use /32 instead of /16 to avoid L2 connectivity assumption
-	// With /16, kernel creates 172.18.0.0/16 connected route, making container think
-	// peers are on same L2 network and attempt ARP instead of using gateway.
-	// With /32, no subnet route is created, forcing all traffic through gateway.
-	addr, err := netlink.ParseAddr(fmt.Sprintf("%s/32", ipAddress))
-	if err != nil {
-		return fmt.Errorf("failed to parse IP address: %w", err)
-	}
-
-	log.Printf("Assigning IP %s to eth0 in container namespace (using /32 to force gateway routing)", addr.String())
-	if err := netlink.AddrAdd(link, addr); err != nil {
-		return fmt.Errorf("failed to assign IP to eth0: %w", err)
-	}
-
-	// Bring eth0 up
-	log.Printf("Bringing eth0 up in container namespace")
-	if err := netlink.LinkSetUp(link); err != nil {
-		return fmt.Errorf("failed to bring eth0 up: %w", err)
-	}
-
-	// Calculate gateway IP (first IP in network range: 172.18.0.1 for 172.18.0.0/16)
-	_, ipNet, err := net.ParseCIDR(networkCIDR)
-	if err != nil {
-		return fmt.Errorf("failed to parse network CIDR %s: %w", networkCIDR, err)
-	}
-
-	gatewayIP := make(net.IP, len(ipNet.IP))
-	copy(gatewayIP, ipNet.IP)
-	gatewayIP[len(gatewayIP)-1] |= 1 // Set last bit to get .1
-
-	// CRITICAL: With /32 addresses, we must first add a link-scoped route to the gateway
-	// Scope: 253 (RT_SCOPE_LINK) tells kernel gateway is directly reachable (no ARP, point-to-point)
-	// Without this scope, kernel still can't route to gateway despite having a /32 route
-	gatewayRoute := &netlink.Route{
-		Dst:       &net.IPNet{IP: gatewayIP, Mask: net.CIDRMask(32, 32)},
-		LinkIndex: link.Attrs().Index,
-		Scope:     netlink.Scope(253), // RT_SCOPE_LINK - CRITICAL for point-to-point links!
-	}
-
-	log.Printf("Adding link-scoped route to gateway %s/32 dev eth0 scope link", gatewayIP.String())
-	if err := netlink.RouteAdd(gatewayRoute); err != nil {
-		return fmt.Errorf("failed to add route to gateway: %w", err)
-	}
-
-	// Now add default route via gateway (this will work because gateway is now reachable)
-	defaultRoute := &netlink.Route{
-		Dst:       nil, // nil means default route (0.0.0.0/0)
-		Gw:        gatewayIP,
-		LinkIndex: link.Attrs().Index,
-	}
-
-	log.Printf("Adding default route via gateway %s", gatewayIP.String())
-	if err := netlink.RouteAdd(defaultRoute); err != nil {
-		return fmt.Errorf("failed to add default route: %w", err)
-	}
-
-	log.Printf("Successfully configured eth0 in container namespace: ip=%s, gateway=%s", ipAddress, gatewayIP.String())
-	return nil
-}
-
-// createWg0InRootNs creates the wg0 interface in the ROOT namespace
-// This is critical for WireGuard to work: encrypted packets arrive on eth0
-// in the root namespace, so wg0's UDP socket must also be in the root namespace
-// to receive them. Decrypted traffic is routed to the container via veth pair.
-//
-// wg0 is assigned an endpoint IP (10.254.0.1/32) from a reserved range.
-// This IP allows WireGuard to automatically create routes for peer allowed-IPs.
-// IMPORTANT: WireGuard's allowed-IPs can be in a DIFFERENT subnet than wg0's IP!
-// For example: wg0 has 10.254.0.1, but allowed-IPs 172.18.0.3/32 creates route:
-// "172.18.0.3/32 dev wg0" (kernel routes based on dest, not interface IP).
-func createWg0InRootNs(privateKey string, listenPort uint32) error {
-	log.Printf("Creating wg0 in root namespace with endpoint IP: listen_port=%d", listenPort)
-
-	// CRITICAL: Lock goroutine to OS thread for namespace operations
-	// Network namespaces are thread-local. Without this, the Go scheduler can move
-	// our goroutine to a different OS thread during blocking operations (like genetlink
-	// calls in ConfigureDevice), causing us to suddenly be in the wrong namespace.
-	// See: https://github.com/WireGuard/wgctrl-go/issues/58
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
-
-	// Parse WireGuard configuration
-	privKey, err := wgtypes.ParseKey(privateKey)
-	if err != nil {
-		return fmt.Errorf("failed to parse private key: %w", err)
-	}
-
-	port := int(listenPort)
-	config := wgtypes.Config{
-		PrivateKey: &privKey,
-		ListenPort: &port,
-	}
-
-	// Create WireGuard interface in root namespace (where eth0 is)
-	log.Printf("Creating wg0 interface in root namespace")
-	wg := &netlink.Wireguard{
-		LinkAttrs: netlink.LinkAttrs{
-			Name: "wg0",
-		},
-	}
-
-	if err := netlink.LinkAdd(wg); err != nil {
-		return fmt.Errorf("failed to create wg0 interface: %w", err)
-	}
-
-	// Create wgctrl client in root namespace
-	log.Printf("Creating wgctrl client in root namespace")
-	client, err := wgctrl.New()
-	if err != nil {
-		netlink.LinkDel(wg)
-		return fmt.Errorf("failed to create wgctrl client: %w", err)
-	}
-	defer client.Close()
-
-	// Configure WireGuard device
-	log.Printf("Configuring wg0 with private key and listen port %d", listenPort)
-	if err := client.ConfigureDevice("wg0", config); err != nil {
-		netlink.LinkDel(wg)
-		return fmt.Errorf("failed to configure wg0: %w", err)
-	}
-
-	// Assign endpoint IP to wg0 (10.254.0.1/32)
-	// This is a reserved address separate from the container overlay network
-	// WireGuard will create routes for overlay IPs (172.18.0.x) even though wg0 has 10.254.0.1
-	endpointIP := "10.254.0.1/32"
-	addr, err := netlink.ParseAddr(endpointIP)
-	if err != nil {
-		netlink.LinkDel(wg)
-		return fmt.Errorf("failed to parse endpoint IP %s: %w", endpointIP, err)
-	}
-
-	log.Printf("Assigning endpoint IP %s to wg0", endpointIP)
-	if err := netlink.AddrAdd(wg, addr); err != nil {
-		netlink.LinkDel(wg)
-		return fmt.Errorf("failed to assign endpoint IP to wg0: %w", err)
-	}
-
-	// Bring wg0 up
-	log.Printf("Bringing wg0 up")
-	if err := netlink.LinkSetUp(wg); err != nil {
-		netlink.LinkDel(wg)
-		return fmt.Errorf("failed to bring wg0 up: %w", err)
-	}
-
-	log.Printf("wg0 created successfully in root namespace with endpoint IP %s", endpointIP)
 	return nil
 }
 
@@ -690,7 +560,7 @@ func createWgInterfaceInRootNs(ifName, privateKey string, listenPort uint32) err
 }
 
 // configureVethRootWithGateway configures a veth root interface with gateway IP
-func configureVethRootWithGateway(vethName, gateway, networkCIDR, containerIP string) error {
+func configureVethRootWithGateway(vethName, gateway, networkCIDR, containerIP string, networkIndex uint32) error {
 	log.Printf("Configuring %s with gateway IP %s", vethName, gateway)
 
 	// Get veth interface
@@ -779,6 +649,19 @@ func renameVethToEthNInContainerNs(netnsPath, oldName, newName, ipAddress, netwo
 	if err := netns.Set(containerNs); err != nil {
 		return fmt.Errorf("failed to switch to container namespace: %w", err)
 	}
+
+	// CRITICAL: Ensure loopback interface is up in container namespace
+	// Each namespace gets its own loopback that starts DOWN
+	// DNS server listens on 127.0.0.11:53, so loopback must be UP
+	// (Idempotent - safe to call even if already up from eth0 setup)
+	lo, err := netlink.LinkByName("lo")
+	if err != nil {
+		return fmt.Errorf("failed to get loopback interface: %w", err)
+	}
+	if err := netlink.LinkSetUp(lo); err != nil {
+		return fmt.Errorf("failed to bring up loopback interface: %w", err)
+	}
+	log.Printf("Loopback interface ensured up in container namespace")
 
 	// Get interface by old name
 	link, err := netlink.LinkByName(oldName)
@@ -1069,3 +952,4 @@ func deleteInterfaceInContainerNs(netnsPath, ifName string) error {
 	log.Printf("Interface %s deleted successfully from container namespace", ifName)
 	return nil
 }
+

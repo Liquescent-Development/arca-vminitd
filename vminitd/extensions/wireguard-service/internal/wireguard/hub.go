@@ -6,6 +6,7 @@ package wireguard
 import (
 	"encoding/base64"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"sync"
 	"syscall"
@@ -18,9 +19,10 @@ import (
 // Hub represents a multi-network WireGuard hub for a container
 // Each network gets its own wgN interface with dedicated veth pair
 type Hub struct {
-	netnsPath  string                     // Path to container network namespace
-	interfaces map[string]*Interface      // networkID -> Interface
-	mu         sync.RWMutex
+	netnsPath   string                     // Path to container network namespace
+	containerID string                     // Container ID (for /etc/resolv.conf path)
+	interfaces  map[string]*Interface      // networkID -> Interface
+	mu          sync.RWMutex
 }
 
 // Interface represents a single WireGuard interface (wg0, wg1, wg2, etc.)
@@ -75,16 +77,17 @@ type PeerStatus struct {
 func NewHub() (*Hub, error) {
 	log.Printf("Creating multi-network WireGuard hub...")
 
-	// Find the container's network namespace
-	netnsPath, err := findContainerNetNs()
+	// Find the container's network namespace and ID
+	netnsPath, containerID, err := findContainerNetNs()
 	if err != nil {
 		return nil, fmt.Errorf("failed to find container namespace: %w", err)
 	}
 	log.Printf("Found container namespace: %s", netnsPath)
 
 	return &Hub{
-		netnsPath:  netnsPath,
-		interfaces: make(map[string]*Interface),
+		netnsPath:   netnsPath,
+		containerID: containerID,
+		interfaces:  make(map[string]*Interface),
 	}, nil
 }
 
@@ -159,7 +162,7 @@ func (h *Hub) AddNetwork(
 	}
 
 	// 3.7 Configure veth-rootN with gateway IP and add route for container IP
-	if err := configureVethRootWithGateway(vethRootName, gateway, networkCIDR, ipAddress); err != nil {
+	if err := configureVethRootWithGateway(vethRootName, gateway, networkCIDR, ipAddress, networkIndex); err != nil {
 		// Cleanup wgN
 		if link, getErr := netlink.LinkByName(wgName); getErr == nil {
 			netlink.LinkDel(link)
@@ -188,6 +191,21 @@ func (h *Hub) AddNetwork(
 	if networkIndex == 0 {
 		if err := configureNATForInternet(); err != nil {
 			log.Printf("Warning: failed to configure NAT: %v", err)
+		}
+
+		// 3.9.1 Write /etc/resolv.conf with gateway IP for DNS resolution
+		// DNS server binds to 0.0.0.0:53, secured by INPUT chain blocking eth0
+		// Container queries gateway IP directly (e.g., 172.18.0.1:53)
+		if h.containerID != "" {
+			resolvConfPath := fmt.Sprintf("/run/container/%s/rootfs/etc/resolv.conf", h.containerID)
+			resolvConfContent := fmt.Sprintf("nameserver %s\n", gateway)
+			if err := ioutil.WriteFile(resolvConfPath, []byte(resolvConfContent), 0644); err != nil {
+				log.Printf("Warning: failed to write resolv.conf: %v", err)
+			} else {
+				log.Printf("✓ Wrote /etc/resolv.conf: nameserver %s", gateway)
+			}
+		} else {
+			log.Printf("Warning: container ID not available, cannot write resolv.conf")
 		}
 	}
 

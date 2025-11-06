@@ -487,61 +487,11 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContextAsyncProvid
                     try hostname.write(toFile: hostnamePath.path, atomically: true, encoding: .utf8)
                 }
 
-                // Start embedded-dns for this container (if ARCA_CONTAINER_ID is present)
-                // Extract ARCA_CONTAINER_ID from process environment
-                if let process = ociSpec.process {
-                    let containerID = process.env
-                        .first { $0.hasPrefix("ARCA_CONTAINER_ID=") }?
-                        .dropFirst("ARCA_CONTAINER_ID=".count)
-                        .description ?? ""
-
-                    if !containerID.isEmpty {
-                        // Write /etc/resolv.conf for embedded-DNS (multi-network name resolution)
-                        // Only written when ARCA_CONTAINER_ID is present (OVS bridge mode containers)
-                        // vmnet containers skip this and use framework's DNS (gateway from VmnetNetwork)
-                        if let root = ociSpec.root {
-                            let etc = URL(fileURLWithPath: root.path).appendingPathComponent("etc")
-                            try FileManager.default.createDirectory(atPath: etc.path, withIntermediateDirectories: true)
-                            let resolvConfPath = etc.appendingPathComponent("resolv.conf")
-                            let resolvConfContent = "nameserver 127.0.0.11\n"
-                            try resolvConfContent.write(toFile: resolvConfPath.path, atomically: true, encoding: .utf8)
-                            log.info("created /etc/resolv.conf for embedded-DNS", metadata: [
-                                "path": "\(resolvConfPath.path)",
-                                "container_id": "\(containerID)"
-                            ])
-                        }
-                        let embeddedDNSPath = "/sbin/arca-embedded-dns"
-                        if FileManager.default.fileExists(atPath: embeddedDNSPath) {
-                            log.info("starting arca-embedded-dns for container", metadata: ["container_id": "\(containerID)"])
-                            var embeddedDNS = Command(embeddedDNSPath)
-                            embeddedDNS.arguments = [
-                                "--listen", "127.0.0.11:53",
-                                // No --helper-addr needed - will auto-detect gateway from /proc/net/route
-                                // Connects to helper VM at gateway:9999 via TCP (packets flow through TAP forwarder)
-                                "--container-id", containerID
-                            ]
-                            embeddedDNS.stdin = nil
-                            embeddedDNS.stdout = nil
-                            embeddedDNS.stderr = .standardError
-                            do {
-                                try embeddedDNS.start()
-                                log.info("arca-embedded-dns started successfully", metadata: [
-                                    "container_id": "\(containerID)",
-                                    "listen": "127.0.0.11:53"
-                                ])
-                            } catch {
-                                log.error("failed to start arca-embedded-dns", metadata: [
-                                    "container_id": "\(containerID)",
-                                    "error": "\(error)"
-                                ])
-                            }
-                        } else {
-                            log.warning("arca-embedded-dns binary not found at \(embeddedDNSPath)")
-                        }
-                    } else {
-                        log.debug("ARCA_CONTAINER_ID not found in process environment, skipping embedded-dns")
-                    }
-                }
+                // NOTE: DNS configuration (resolv.conf) is now written by arca-wireguard-service
+                // when the first network is added (AddNetwork RPC). This is because we need
+                // to know the WireGuard gateway IP (e.g., 172.18.0.1), which is only available
+                // after network configuration completes. Until then, the vmnet resolv.conf
+                // (pointing to control plane DNS) remains in place for internet DNS resolution.
 
                 let ctr = try ManagedContainer(
                     id: request.id,

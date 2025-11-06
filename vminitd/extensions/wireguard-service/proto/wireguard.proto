@@ -203,6 +203,15 @@ message AddPeerRequest {
 
     // Peer's overlay IP address (for allowed-ips routing, e.g., "172.18.0.3")
     string peer_ip_address = 5;
+
+    // Peer's container name (for DNS resolution, e.g., "web1")
+    string peer_name = 6;
+
+    // Peer's container ID (Docker ID, for logging/debugging)
+    string peer_container_id = 7;
+
+    // Peer's DNS aliases (additional names that resolve to this IP)
+    repeated string peer_aliases = 8;
 }
 
 message AddPeerResponse {
@@ -226,6 +235,9 @@ message RemovePeerRequest {
 
     // Peer's WireGuard public key to remove (Base64-encoded)
     string peer_public_key = 3;
+
+    // Peer's container name (for DNS entry removal)
+    string peer_name = 4;
 }
 
 message RemovePeerResponse {

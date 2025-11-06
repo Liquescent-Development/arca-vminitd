@@ -12,14 +12,15 @@ import (
 
 // Server is a DNS server that handles internal container names and forwards external queries
 type Server struct {
-	addr         string
-	resolver     *Resolver
-	upstreamDNS  []string // External DNS servers (e.g., ["8.8.8.8:53", "8.8.4.4:53"])
-	dnsServer    *dns.Server
+	addr        string
+	resolver    *Resolver
+	upstreamDNS []string // External DNS servers (e.g., ["8.8.8.8:53", "8.8.4.4:53"])
+	dnsServer   *dns.Server
 }
 
 // NewServer creates a new DNS server
-func NewServer(addr string, resolver *Resolver) (*Server, error) {
+// TODO: Configure upstreamDNS to match the macOS host
+func NewServer(addr string, resolver *Resolver) *Server {
 	return &Server{
 		addr:     addr,
 		resolver: resolver,
@@ -27,19 +28,19 @@ func NewServer(addr string, resolver *Resolver) (*Server, error) {
 			"8.8.8.8:53",
 			"8.8.4.4:53",
 		},
-	}, nil
+	}
 }
 
 // ListenAndServe starts the DNS server
 func (s *Server) ListenAndServe(ctx context.Context) error {
 	// Create DNS server
 	s.dnsServer = &dns.Server{
-		Addr: s.addr,
-		Net:  "udp",
+		Addr:    s.addr,
+		Net:     "udp",
 		Handler: dns.HandlerFunc(s.handleDNSRequest),
 	}
 
-	log.Printf("DNS server listening on %s (UDP)", s.addr)
+	log.Printf("[DNS] Listening on %s (UDP)", s.addr)
 
 	// Start server in background
 	errChan := make(chan error, 1)
@@ -52,7 +53,7 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	// Wait for context cancellation or error
 	select {
 	case <-ctx.Done():
-		log.Println("Shutting down DNS server...")
+		log.Println("[DNS] Shutting down DNS server...")
 		return s.dnsServer.Shutdown()
 	case err := <-errChan:
 		return fmt.Errorf("DNS server error: %v", err)
@@ -82,12 +83,12 @@ func (s *Server) handleDNSRequest(w dns.ResponseWriter, req *dns.Msg) {
 		hostname = hostname[:len(hostname)-1]
 	}
 
-	log.Printf("DNS query: %s (type=%s)", hostname, dns.TypeToString[question.Qtype])
+	log.Printf("[DNS] Query: %s (type=%s)", hostname, dns.TypeToString[question.Qtype])
 
 	// Try to resolve internally first (only for A and AAAA records)
 	if question.Qtype == dns.TypeA || question.Qtype == dns.TypeAAAA {
 		if ip, found := s.resolver.Resolve(hostname); found {
-			log.Printf("Resolved internally: %s -> %s", hostname, ip)
+			log.Printf("[DNS] Resolved internally: %s -> %s", hostname, ip)
 
 			// Create A record response for IPv4
 			if question.Qtype == dns.TypeA {
@@ -115,7 +116,7 @@ func (s *Server) handleDNSRequest(w dns.ResponseWriter, req *dns.Msg) {
 	}
 
 	// Not found internally or not an A/AAAA record - forward to upstream DNS
-	log.Printf("Forwarding to upstream DNS: %s", hostname)
+	log.Printf("[DNS] Forwarding to upstream DNS: %s", hostname)
 	upstreamResp := s.forwardToUpstream(req)
 
 	if upstreamResp != nil {
@@ -139,7 +140,7 @@ func (s *Server) forwardToUpstream(req *dns.Msg) *dns.Msg {
 	for _, upstream := range s.upstreamDNS {
 		resp, _, err := client.Exchange(req, upstream)
 		if err != nil {
-			log.Printf("Failed to query upstream %s: %v", upstream, err)
+			log.Printf("[DNS] Failed to query upstream %s: %v", upstream, err)
 			continue
 		}
 
@@ -148,6 +149,6 @@ func (s *Server) forwardToUpstream(req *dns.Msg) *dns.Msg {
 		}
 	}
 
-	log.Printf("All upstream DNS servers failed")
+	log.Printf("[DNS] All upstream DNS servers failed")
 	return nil
 }

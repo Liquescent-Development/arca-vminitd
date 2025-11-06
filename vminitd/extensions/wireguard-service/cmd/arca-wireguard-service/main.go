@@ -17,6 +17,7 @@ import (
 	"github.com/mdlayher/vsock"
 	pb "github.com/vas-solutus/arca-wireguard-service/proto"
 	"github.com/vas-solutus/arca-wireguard-service/internal/wireguard"
+	"github.com/vas-solutus/arca-wireguard-service/internal/dns"
 	"google.golang.org/grpc"
 )
 
@@ -30,8 +31,9 @@ var startTime = time.Now()
 // server implements the WireGuardService gRPC service
 type server struct {
 	pb.UnimplementedWireGuardServiceServer
-	hub *wireguard.Hub
-	mu  sync.RWMutex
+	hub         *wireguard.Hub
+	dnsResolver *dns.Resolver
+	mu          sync.RWMutex
 }
 
 // AddNetwork adds a network to the container's WireGuard hub
@@ -241,6 +243,15 @@ func (s *server) AddPeer(ctx context.Context, req *pb.AddPeerRequest) (*pb.AddPe
 		}, nil
 	}
 
+	// Add DNS entry for this peer (Phase 3.1)
+	s.dnsResolver.AddEntry(
+		req.NetworkId,
+		req.PeerName,
+		req.PeerContainerId,
+		req.PeerIpAddress,
+		req.PeerAliases,
+	)
+
 	return &pb.AddPeerResponse{
 		Success:    true,
 		TotalPeers: uint32(totalPeers),
@@ -277,6 +288,9 @@ func (s *server) RemovePeer(ctx context.Context, req *pb.RemovePeerRequest) (*pb
 		}, nil
 	}
 
+	// Remove DNS entry for this peer (Phase 3.1)
+	s.dnsResolver.RemoveEntry(req.NetworkId, req.PeerName)
+
 	return &pb.RemovePeerResponse{
 		Success:        true,
 		RemainingPeers: uint32(remainingPeers),
@@ -286,7 +300,29 @@ func (s *server) RemovePeer(ctx context.Context, req *pb.RemovePeerRequest) (*pb
 func main() {
 	log.Printf("Arca WireGuard Service v%s starting...", VERSION)
 
-	// Listen on vsock
+	// Create DNS resolver (shared across all containers)
+	dnsResolver := dns.NewResolver()
+	log.Printf("DNS resolver initialized")
+
+	// Create DNS server listening on all interfaces (0.0.0.0:53)
+	// This allows it to receive queries on gateway IPs (172.18.0.1, 172.19.0.1, etc.)
+	// Security: INPUT chain blocks DNS queries from eth0 (control plane) - see configureNATForInternet
+	// Containers query gateway IP directly (e.g., 172.18.0.1:53) - no DNAT needed
+	dnsServer := dns.NewServer("0.0.0.0:53", dnsResolver)
+
+	// Start DNS server in background
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go func() {
+		if err := dnsServer.ListenAndServe(ctx); err != nil {
+			log.Printf("DNS server error: %v", err)
+		}
+	}()
+
+	log.Printf("DNS server started on 0.0.0.0:53 (accessible on gateway IPs, blocked from control plane)")
+
+	// Listen on vsock for WireGuard gRPC API
 	listener, err := vsock.Listen(WIREGUARD_PORT, nil)
 	if err != nil {
 		log.Fatalf("Failed to listen on vsock port %d: %v", WIREGUARD_PORT, err)
@@ -295,9 +331,11 @@ func main() {
 
 	log.Printf("Listening on vsock port %d", WIREGUARD_PORT)
 
-	// Create gRPC server
+	// Create gRPC server with DNS resolver
 	grpcServer := grpc.NewServer()
-	pb.RegisterWireGuardServiceServer(grpcServer, &server{})
+	pb.RegisterWireGuardServiceServer(grpcServer, &server{
+		dnsResolver: dnsResolver,
+	})
 
 	// Handle shutdown signals
 	sigChan := make(chan os.Signal, 1)
@@ -306,11 +344,12 @@ func main() {
 	go func() {
 		<-sigChan
 		log.Println("Shutting down...")
+		cancel() // Stop DNS server
 		grpcServer.GracefulStop()
 	}()
 
 	// Start serving
-	log.Println("WireGuard service ready")
+	log.Println("WireGuard service ready (with integrated DNS)")
 	if err := grpcServer.Serve(listener); err != nil {
 		log.Fatalf("Failed to serve: %v", err)
 	}

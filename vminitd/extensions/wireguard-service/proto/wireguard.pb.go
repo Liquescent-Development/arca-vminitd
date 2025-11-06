@@ -816,6 +816,12 @@ type AddPeerRequest struct {
 	PeerEndpoint string `protobuf:"bytes,4,opt,name=peer_endpoint,json=peerEndpoint,proto3" json:"peer_endpoint,omitempty"`
 	// Peer's overlay IP address (for allowed-ips routing, e.g., "172.18.0.3")
 	PeerIpAddress string `protobuf:"bytes,5,opt,name=peer_ip_address,json=peerIpAddress,proto3" json:"peer_ip_address,omitempty"`
+	// Peer's container name (for DNS resolution, e.g., "web1")
+	PeerName string `protobuf:"bytes,6,opt,name=peer_name,json=peerName,proto3" json:"peer_name,omitempty"`
+	// Peer's container ID (Docker ID, for logging/debugging)
+	PeerContainerId string `protobuf:"bytes,7,opt,name=peer_container_id,json=peerContainerId,proto3" json:"peer_container_id,omitempty"`
+	// Peer's DNS aliases (additional names that resolve to this IP)
+	PeerAliases   []string `protobuf:"bytes,8,rep,name=peer_aliases,json=peerAliases,proto3" json:"peer_aliases,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -883,6 +889,27 @@ func (x *AddPeerRequest) GetPeerIpAddress() string {
 		return x.PeerIpAddress
 	}
 	return ""
+}
+
+func (x *AddPeerRequest) GetPeerName() string {
+	if x != nil {
+		return x.PeerName
+	}
+	return ""
+}
+
+func (x *AddPeerRequest) GetPeerContainerId() string {
+	if x != nil {
+		return x.PeerContainerId
+	}
+	return ""
+}
+
+func (x *AddPeerRequest) GetPeerAliases() []string {
+	if x != nil {
+		return x.PeerAliases
+	}
+	return nil
 }
 
 type AddPeerResponse struct {
@@ -957,6 +984,8 @@ type RemovePeerRequest struct {
 	NetworkIndex uint32 `protobuf:"varint,2,opt,name=network_index,json=networkIndex,proto3" json:"network_index,omitempty"`
 	// Peer's WireGuard public key to remove (Base64-encoded)
 	PeerPublicKey string `protobuf:"bytes,3,opt,name=peer_public_key,json=peerPublicKey,proto3" json:"peer_public_key,omitempty"`
+	// Peer's container name (for DNS entry removal)
+	PeerName      string `protobuf:"bytes,4,opt,name=peer_name,json=peerName,proto3" json:"peer_name,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1008,6 +1037,13 @@ func (x *RemovePeerRequest) GetNetworkIndex() uint32 {
 func (x *RemovePeerRequest) GetPeerPublicKey() string {
 	if x != nil {
 		return x.PeerPublicKey
+	}
+	return ""
+}
+
+func (x *RemovePeerRequest) GetPeerName() string {
+	if x != nil {
+		return x.PeerName
 	}
 	return ""
 }
@@ -1148,24 +1184,28 @@ const file_proto_wireguard_proto_rawDesc = "" +
 	"\x18GetVmnetEndpointResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x14\n" +
 	"\x05error\x18\x02 \x01(\tR\x05error\x12\x1a\n" +
-	"\bendpoint\x18\x03 \x01(\tR\bendpoint\"\xc9\x01\n" +
+	"\bendpoint\x18\x03 \x01(\tR\bendpoint\"\xb5\x02\n" +
 	"\x0eAddPeerRequest\x12\x1d\n" +
 	"\n" +
 	"network_id\x18\x01 \x01(\tR\tnetworkId\x12#\n" +
 	"\rnetwork_index\x18\x02 \x01(\rR\fnetworkIndex\x12&\n" +
 	"\x0fpeer_public_key\x18\x03 \x01(\tR\rpeerPublicKey\x12#\n" +
 	"\rpeer_endpoint\x18\x04 \x01(\tR\fpeerEndpoint\x12&\n" +
-	"\x0fpeer_ip_address\x18\x05 \x01(\tR\rpeerIpAddress\"b\n" +
+	"\x0fpeer_ip_address\x18\x05 \x01(\tR\rpeerIpAddress\x12\x1b\n" +
+	"\tpeer_name\x18\x06 \x01(\tR\bpeerName\x12*\n" +
+	"\x11peer_container_id\x18\a \x01(\tR\x0fpeerContainerId\x12!\n" +
+	"\fpeer_aliases\x18\b \x03(\tR\vpeerAliases\"b\n" +
 	"\x0fAddPeerResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x14\n" +
 	"\x05error\x18\x02 \x01(\tR\x05error\x12\x1f\n" +
 	"\vtotal_peers\x18\x03 \x01(\rR\n" +
-	"totalPeers\"\x7f\n" +
+	"totalPeers\"\x9c\x01\n" +
 	"\x11RemovePeerRequest\x12\x1d\n" +
 	"\n" +
 	"network_id\x18\x01 \x01(\tR\tnetworkId\x12#\n" +
 	"\rnetwork_index\x18\x02 \x01(\rR\fnetworkIndex\x12&\n" +
-	"\x0fpeer_public_key\x18\x03 \x01(\tR\rpeerPublicKey\"m\n" +
+	"\x0fpeer_public_key\x18\x03 \x01(\tR\rpeerPublicKey\x12\x1b\n" +
+	"\tpeer_name\x18\x04 \x01(\tR\bpeerName\"m\n" +
 	"\x12RemovePeerResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x14\n" +
 	"\x05error\x18\x02 \x01(\tR\x05error\x12'\n" +
