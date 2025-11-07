@@ -19,16 +19,25 @@ type Server struct {
 }
 
 // NewServer creates a new DNS server
-// TODO: Configure upstreamDNS to match the macOS host
+// Starts with fallback DNS servers; updated to use vmnet gateway when first network is added
 func NewServer(addr string, resolver *Resolver) *Server {
+	// Start with fallback DNS - will be updated to vmnet gateway when first network added
+	upstreamDNS := []string{"8.8.8.8:53", "8.8.4.4:53"}
+
+	log.Printf("[DNS] Starting with fallback DNS servers: %v", upstreamDNS)
+	log.Printf("[DNS] Will be updated to vmnet gateway when first network is added")
+
 	return &Server{
-		addr:     addr,
-		resolver: resolver,
-		upstreamDNS: []string{
-			"8.8.8.8:53",
-			"8.8.4.4:53",
-		},
+		addr:        addr,
+		resolver:    resolver,
+		upstreamDNS: upstreamDNS,
 	}
+}
+
+// UpdateUpstreamDNS updates the upstream DNS servers (called when gateway is discovered)
+func (s *Server) UpdateUpstreamDNS(upstreams []string) {
+	s.upstreamDNS = upstreams
+	log.Printf("[DNS] Updated upstream DNS servers: %v", upstreams)
 }
 
 // ListenAndServe starts the DNS server
@@ -138,13 +147,14 @@ func (s *Server) forwardToUpstream(req *dns.Msg) *dns.Msg {
 
 	// Try each upstream server
 	for _, upstream := range s.upstreamDNS {
-		resp, _, err := client.Exchange(req, upstream)
+		resp, rtt, err := client.Exchange(req, upstream)
 		if err != nil {
 			log.Printf("[DNS] Failed to query upstream %s: %v", upstream, err)
 			continue
 		}
 
 		if resp != nil {
+			log.Printf("[DNS] ✓ Received response from %s (rtt=%v, answers=%d)", upstream, rtt, len(resp.Answer))
 			return resp
 		}
 	}

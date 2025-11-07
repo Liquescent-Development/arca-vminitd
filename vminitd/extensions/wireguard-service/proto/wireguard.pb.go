@@ -1347,6 +1347,107 @@ func (x *UnpublishPortResponse) GetError() string {
 	return ""
 }
 
+// Request to dump nftables state for debugging
+type DumpNftablesRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DumpNftablesRequest) Reset() {
+	*x = DumpNftablesRequest{}
+	mi := &file_proto_wireguard_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DumpNftablesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DumpNftablesRequest) ProtoMessage() {}
+
+func (x *DumpNftablesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_wireguard_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DumpNftablesRequest.ProtoReflect.Descriptor instead.
+func (*DumpNftablesRequest) Descriptor() ([]byte, []int) {
+	return file_proto_wireguard_proto_rawDescGZIP(), []int{19}
+}
+
+type DumpNftablesResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Success status
+	Success bool `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
+	// Error message if success = false
+	Error string `protobuf:"bytes,2,opt,name=error,proto3" json:"error,omitempty"`
+	// Full nftables ruleset output (from 'nft list ruleset')
+	// Includes all tables, chains, rules, and packet counters
+	Ruleset       string `protobuf:"bytes,3,opt,name=ruleset,proto3" json:"ruleset,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DumpNftablesResponse) Reset() {
+	*x = DumpNftablesResponse{}
+	mi := &file_proto_wireguard_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DumpNftablesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DumpNftablesResponse) ProtoMessage() {}
+
+func (x *DumpNftablesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_wireguard_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DumpNftablesResponse.ProtoReflect.Descriptor instead.
+func (*DumpNftablesResponse) Descriptor() ([]byte, []int) {
+	return file_proto_wireguard_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *DumpNftablesResponse) GetSuccess() bool {
+	if x != nil {
+		return x.Success
+	}
+	return false
+}
+
+func (x *DumpNftablesResponse) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
+func (x *DumpNftablesResponse) GetRuleset() string {
+	if x != nil {
+		return x.Ruleset
+	}
+	return ""
+}
+
 var File_proto_wireguard_proto protoreflect.FileDescriptor
 
 const file_proto_wireguard_proto_rawDesc = "" +
@@ -1459,7 +1560,12 @@ const file_proto_wireguard_proto_rawDesc = "" +
 	"\thost_port\x18\x02 \x01(\rR\bhostPort\"G\n" +
 	"\x15UnpublishPortResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x14\n" +
-	"\x05error\x18\x02 \x01(\tR\x05error2\x85\x06\n" +
+	"\x05error\x18\x02 \x01(\tR\x05error\"\x15\n" +
+	"\x13DumpNftablesRequest\"`\n" +
+	"\x14DumpNftablesResponse\x12\x18\n" +
+	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x14\n" +
+	"\x05error\x18\x02 \x01(\tR\x05error\x12\x18\n" +
+	"\aruleset\x18\x03 \x01(\tR\aruleset2\xe6\x06\n" +
 	"\x10WireGuardService\x12Y\n" +
 	"\n" +
 	"AddNetwork\x12$.arca.wireguard.v1.AddNetworkRequest\x1a%.arca.wireguard.v1.AddNetworkResponse\x12b\n" +
@@ -1470,7 +1576,8 @@ const file_proto_wireguard_proto_rawDesc = "" +
 	"\tGetStatus\x12#.arca.wireguard.v1.GetStatusRequest\x1a$.arca.wireguard.v1.GetStatusResponse\x12k\n" +
 	"\x10GetVmnetEndpoint\x12*.arca.wireguard.v1.GetVmnetEndpointRequest\x1a+.arca.wireguard.v1.GetVmnetEndpointResponse\x12\\\n" +
 	"\vPublishPort\x12%.arca.wireguard.v1.PublishPortRequest\x1a&.arca.wireguard.v1.PublishPortResponse\x12b\n" +
-	"\rUnpublishPort\x12'.arca.wireguard.v1.UnpublishPortRequest\x1a(.arca.wireguard.v1.UnpublishPortResponseB5Z3github.com/vas-solutus/arca-wireguard-service/protob\x06proto3"
+	"\rUnpublishPort\x12'.arca.wireguard.v1.UnpublishPortRequest\x1a(.arca.wireguard.v1.UnpublishPortResponse\x12_\n" +
+	"\fDumpNftables\x12&.arca.wireguard.v1.DumpNftablesRequest\x1a'.arca.wireguard.v1.DumpNftablesResponseB5Z3github.com/vas-solutus/arca-wireguard-service/protob\x06proto3"
 
 var (
 	file_proto_wireguard_proto_rawDescOnce sync.Once
@@ -1484,7 +1591,7 @@ func file_proto_wireguard_proto_rawDescGZIP() []byte {
 	return file_proto_wireguard_proto_rawDescData
 }
 
-var file_proto_wireguard_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
+var file_proto_wireguard_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
 var file_proto_wireguard_proto_goTypes = []any{
 	(*AddNetworkRequest)(nil),        // 0: arca.wireguard.v1.AddNetworkRequest
 	(*AddNetworkResponse)(nil),       // 1: arca.wireguard.v1.AddNetworkResponse
@@ -1505,6 +1612,8 @@ var file_proto_wireguard_proto_goTypes = []any{
 	(*PublishPortResponse)(nil),      // 16: arca.wireguard.v1.PublishPortResponse
 	(*UnpublishPortRequest)(nil),     // 17: arca.wireguard.v1.UnpublishPortRequest
 	(*UnpublishPortResponse)(nil),    // 18: arca.wireguard.v1.UnpublishPortResponse
+	(*DumpNftablesRequest)(nil),      // 19: arca.wireguard.v1.DumpNftablesRequest
+	(*DumpNftablesResponse)(nil),     // 20: arca.wireguard.v1.DumpNftablesResponse
 }
 var file_proto_wireguard_proto_depIdxs = []int32{
 	6,  // 0: arca.wireguard.v1.GetStatusResponse.interfaces:type_name -> arca.wireguard.v1.InterfaceStatus
@@ -1518,16 +1627,18 @@ var file_proto_wireguard_proto_depIdxs = []int32{
 	9,  // 8: arca.wireguard.v1.WireGuardService.GetVmnetEndpoint:input_type -> arca.wireguard.v1.GetVmnetEndpointRequest
 	15, // 9: arca.wireguard.v1.WireGuardService.PublishPort:input_type -> arca.wireguard.v1.PublishPortRequest
 	17, // 10: arca.wireguard.v1.WireGuardService.UnpublishPort:input_type -> arca.wireguard.v1.UnpublishPortRequest
-	1,  // 11: arca.wireguard.v1.WireGuardService.AddNetwork:output_type -> arca.wireguard.v1.AddNetworkResponse
-	3,  // 12: arca.wireguard.v1.WireGuardService.RemoveNetwork:output_type -> arca.wireguard.v1.RemoveNetworkResponse
-	12, // 13: arca.wireguard.v1.WireGuardService.AddPeer:output_type -> arca.wireguard.v1.AddPeerResponse
-	14, // 14: arca.wireguard.v1.WireGuardService.RemovePeer:output_type -> arca.wireguard.v1.RemovePeerResponse
-	5,  // 15: arca.wireguard.v1.WireGuardService.GetStatus:output_type -> arca.wireguard.v1.GetStatusResponse
-	10, // 16: arca.wireguard.v1.WireGuardService.GetVmnetEndpoint:output_type -> arca.wireguard.v1.GetVmnetEndpointResponse
-	16, // 17: arca.wireguard.v1.WireGuardService.PublishPort:output_type -> arca.wireguard.v1.PublishPortResponse
-	18, // 18: arca.wireguard.v1.WireGuardService.UnpublishPort:output_type -> arca.wireguard.v1.UnpublishPortResponse
-	11, // [11:19] is the sub-list for method output_type
-	3,  // [3:11] is the sub-list for method input_type
+	19, // 11: arca.wireguard.v1.WireGuardService.DumpNftables:input_type -> arca.wireguard.v1.DumpNftablesRequest
+	1,  // 12: arca.wireguard.v1.WireGuardService.AddNetwork:output_type -> arca.wireguard.v1.AddNetworkResponse
+	3,  // 13: arca.wireguard.v1.WireGuardService.RemoveNetwork:output_type -> arca.wireguard.v1.RemoveNetworkResponse
+	12, // 14: arca.wireguard.v1.WireGuardService.AddPeer:output_type -> arca.wireguard.v1.AddPeerResponse
+	14, // 15: arca.wireguard.v1.WireGuardService.RemovePeer:output_type -> arca.wireguard.v1.RemovePeerResponse
+	5,  // 16: arca.wireguard.v1.WireGuardService.GetStatus:output_type -> arca.wireguard.v1.GetStatusResponse
+	10, // 17: arca.wireguard.v1.WireGuardService.GetVmnetEndpoint:output_type -> arca.wireguard.v1.GetVmnetEndpointResponse
+	16, // 18: arca.wireguard.v1.WireGuardService.PublishPort:output_type -> arca.wireguard.v1.PublishPortResponse
+	18, // 19: arca.wireguard.v1.WireGuardService.UnpublishPort:output_type -> arca.wireguard.v1.UnpublishPortResponse
+	20, // 20: arca.wireguard.v1.WireGuardService.DumpNftables:output_type -> arca.wireguard.v1.DumpNftablesResponse
+	12, // [12:21] is the sub-list for method output_type
+	3,  // [3:12] is the sub-list for method input_type
 	3,  // [3:3] is the sub-list for extension type_name
 	3,  // [3:3] is the sub-list for extension extendee
 	0,  // [0:3] is the sub-list for field type_name
@@ -1544,7 +1655,7 @@ func file_proto_wireguard_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_wireguard_proto_rawDesc), len(file_proto_wireguard_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   19,
+			NumMessages:   21,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

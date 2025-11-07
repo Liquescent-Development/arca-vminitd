@@ -34,6 +34,9 @@ service WireGuardService {
 
     // Unpublish a port (remove DNAT rule)
     rpc UnpublishPort(UnpublishPortRequest) returns (UnpublishPortResponse);
+
+    // Dump nftables state for debugging (returns full ruleset with counters)
+    rpc DumpNftables(DumpNftablesRequest) returns (DumpNftablesResponse);
 }
 
 // Request to add a network to the container
@@ -295,4 +298,21 @@ message UnpublishPortResponse {
 
     // Error message if success = false
     string error = 2;
+}
+
+// Request to dump nftables state for debugging
+message DumpNftablesRequest {
+    // No parameters needed
+}
+
+message DumpNftablesResponse {
+    // Success status
+    bool success = 1;
+
+    // Error message if success = false
+    string error = 2;
+
+    // Full nftables ruleset output (from 'nft list ruleset')
+    // Includes all tables, chains, rules, and packet counters
+    string ruleset = 3;
 }

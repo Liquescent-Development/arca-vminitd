@@ -30,6 +30,7 @@ const (
 	WireGuardService_GetVmnetEndpoint_FullMethodName = "/arca.wireguard.v1.WireGuardService/GetVmnetEndpoint"
 	WireGuardService_PublishPort_FullMethodName      = "/arca.wireguard.v1.WireGuardService/PublishPort"
 	WireGuardService_UnpublishPort_FullMethodName    = "/arca.wireguard.v1.WireGuardService/UnpublishPort"
+	WireGuardService_DumpNftables_FullMethodName     = "/arca.wireguard.v1.WireGuardService/DumpNftables"
 )
 
 // WireGuardServiceClient is the client API for WireGuardService service.
@@ -56,6 +57,8 @@ type WireGuardServiceClient interface {
 	PublishPort(ctx context.Context, in *PublishPortRequest, opts ...grpc.CallOption) (*PublishPortResponse, error)
 	// Unpublish a port (remove DNAT rule)
 	UnpublishPort(ctx context.Context, in *UnpublishPortRequest, opts ...grpc.CallOption) (*UnpublishPortResponse, error)
+	// Dump nftables state for debugging (returns full ruleset with counters)
+	DumpNftables(ctx context.Context, in *DumpNftablesRequest, opts ...grpc.CallOption) (*DumpNftablesResponse, error)
 }
 
 type wireGuardServiceClient struct {
@@ -146,6 +149,16 @@ func (c *wireGuardServiceClient) UnpublishPort(ctx context.Context, in *Unpublis
 	return out, nil
 }
 
+func (c *wireGuardServiceClient) DumpNftables(ctx context.Context, in *DumpNftablesRequest, opts ...grpc.CallOption) (*DumpNftablesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DumpNftablesResponse)
+	err := c.cc.Invoke(ctx, WireGuardService_DumpNftables_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // WireGuardServiceServer is the server API for WireGuardService service.
 // All implementations must embed UnimplementedWireGuardServiceServer
 // for forward compatibility.
@@ -170,6 +183,8 @@ type WireGuardServiceServer interface {
 	PublishPort(context.Context, *PublishPortRequest) (*PublishPortResponse, error)
 	// Unpublish a port (remove DNAT rule)
 	UnpublishPort(context.Context, *UnpublishPortRequest) (*UnpublishPortResponse, error)
+	// Dump nftables state for debugging (returns full ruleset with counters)
+	DumpNftables(context.Context, *DumpNftablesRequest) (*DumpNftablesResponse, error)
 	mustEmbedUnimplementedWireGuardServiceServer()
 }
 
@@ -203,6 +218,9 @@ func (UnimplementedWireGuardServiceServer) PublishPort(context.Context, *Publish
 }
 func (UnimplementedWireGuardServiceServer) UnpublishPort(context.Context, *UnpublishPortRequest) (*UnpublishPortResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method UnpublishPort not implemented")
+}
+func (UnimplementedWireGuardServiceServer) DumpNftables(context.Context, *DumpNftablesRequest) (*DumpNftablesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DumpNftables not implemented")
 }
 func (UnimplementedWireGuardServiceServer) mustEmbedUnimplementedWireGuardServiceServer() {}
 func (UnimplementedWireGuardServiceServer) testEmbeddedByValue()                          {}
@@ -369,6 +387,24 @@ func _WireGuardService_UnpublishPort_Handler(srv interface{}, ctx context.Contex
 	return interceptor(ctx, in, info, handler)
 }
 
+func _WireGuardService_DumpNftables_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DumpNftablesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WireGuardServiceServer).DumpNftables(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WireGuardService_DumpNftables_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WireGuardServiceServer).DumpNftables(ctx, req.(*DumpNftablesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // WireGuardService_ServiceDesc is the grpc.ServiceDesc for WireGuardService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -407,6 +443,10 @@ var WireGuardService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "UnpublishPort",
 			Handler:    _WireGuardService_UnpublishPort_Handler,
+		},
+		{
+			MethodName: "DumpNftables",
+			Handler:    _WireGuardService_DumpNftables_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

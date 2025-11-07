@@ -19,10 +19,11 @@ import (
 // Hub represents a multi-network WireGuard hub for a container
 // Each network gets its own wgN interface with dedicated veth pair
 type Hub struct {
-	netnsPath   string                     // Path to container network namespace
-	containerID string                     // Container ID (for /etc/resolv.conf path)
-	interfaces  map[string]*Interface      // networkID -> Interface
-	mu          sync.RWMutex
+	netnsPath       string                     // Path to container network namespace
+	containerID     string                     // Container ID (for /etc/resolv.conf path)
+	interfaces      map[string]*Interface      // networkID -> Interface
+	mu              sync.RWMutex
+	onGatewayReady  func(gateway string)       // Callback when vmnet gateway is discovered
 }
 
 // Interface represents a single WireGuard interface (wg0, wg1, wg2, etc.)
@@ -74,7 +75,7 @@ type PeerStatus struct {
 
 // NewHub creates a new multi-network WireGuard hub for a container
 // The hub starts empty; networks are added via AddNetwork()
-func NewHub() (*Hub, error) {
+func NewHub(onGatewayReady func(gateway string)) (*Hub, error) {
 	log.Printf("Creating multi-network WireGuard hub...")
 
 	// Find the container's network namespace and ID
@@ -85,9 +86,10 @@ func NewHub() (*Hub, error) {
 	log.Printf("Found container namespace: %s", netnsPath)
 
 	return &Hub{
-		netnsPath:   netnsPath,
-		containerID: containerID,
-		interfaces:  make(map[string]*Interface),
+		netnsPath:      netnsPath,
+		containerID:    containerID,
+		interfaces:     make(map[string]*Interface),
+		onGatewayReady: onGatewayReady,
 	}, nil
 }
 
@@ -187,13 +189,20 @@ func (h *Hub) AddNetwork(
 		return "", "", "", fmt.Errorf("failed to rename %s to %s: %w", vethContName, ethName, err)
 	}
 
-	// 3.9 Configure NAT (only on first network)
+	// 3.9 Setup default route in root namespace (only on first network)
+	// This must happen AFTER eth0 has an IP address (which vminitd assigns during boot)
+	// The DNS server needs this route to reach upstream DNS via vmnet gateway
 	if networkIndex == 0 {
-		if err := configureNATForInternet(); err != nil {
-			log.Printf("Warning: failed to configure NAT: %v", err)
+		gatewayIP, err := SetupDefaultRoute()
+		if err != nil {
+			log.Printf("Warning: failed to setup default route: %v", err)
+		}
+		// Notify DNS server of discovered gateway (even if route already existed)
+		if gatewayIP != "" && h.onGatewayReady != nil {
+			h.onGatewayReady(gatewayIP)
 		}
 
-		// 3.9.1 Write /etc/resolv.conf with gateway IP for DNS resolution
+		// Write /etc/resolv.conf with gateway IP for DNS resolution
 		// DNS server binds to 0.0.0.0:53, secured by INPUT chain blocking eth0
 		// Container queries gateway IP directly (e.g., 172.18.0.1:53)
 		if h.containerID != "" {

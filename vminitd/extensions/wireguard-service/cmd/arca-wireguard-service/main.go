@@ -33,6 +33,7 @@ type server struct {
 	pb.UnimplementedWireGuardServiceServer
 	hub         *wireguard.Hub
 	dnsResolver *dns.Resolver
+	dnsServer   *dns.Server
 	mu          sync.RWMutex
 }
 
@@ -46,7 +47,11 @@ func (s *server) AddNetwork(ctx context.Context, req *pb.AddNetworkRequest) (*pb
 
 	// Create hub if it doesn't exist (lazy initialization)
 	if s.hub == nil {
-		hub, err := wireguard.NewHub()
+		// Pass callback to update DNS server's upstream when gateway is discovered
+		hub, err := wireguard.NewHub(func(gatewayIP string) {
+			// Update DNS server to use vmnet gateway for upstream DNS
+			s.dnsServer.UpdateUpstreamDNS([]string{gatewayIP + ":53"})
+		})
 		if err != nil {
 			s.mu.Unlock()
 			log.Printf("Failed to create hub: %v", err)
@@ -355,6 +360,25 @@ func (s *server) UnpublishPort(ctx context.Context, req *pb.UnpublishPortRequest
 	}, nil
 }
 
+// DumpNftables returns the full nftables ruleset for debugging
+func (s *server) DumpNftables(ctx context.Context, req *pb.DumpNftablesRequest) (*pb.DumpNftablesResponse, error) {
+	log.Printf("DumpNftables: dumping full nftables ruleset")
+
+	ruleset, err := wireguard.DumpNftables()
+	if err != nil {
+		log.Printf("DumpNftables failed: %v", err)
+		return &pb.DumpNftablesResponse{
+			Success: false,
+			Error:   err.Error(),
+		}, nil
+	}
+
+	return &pb.DumpNftablesResponse{
+		Success: true,
+		Ruleset: ruleset,
+	}, nil
+}
+
 func main() {
 	log.Printf("Arca WireGuard Service v%s starting...", VERSION)
 
@@ -387,6 +411,14 @@ func main() {
 	}
 	log.Printf("vmnet security configured (underlay secured, only WireGuard UDP allowed)")
 
+	// Configure NAT for internet access (Phase 3)
+	// CRITICAL: Must be called BEFORE DNS server tries to query upstream DNS (8.8.8.8)
+	// Creates MASQUERADE rule for eth0 → internet traffic
+	if err := wireguard.ConfigureNATForInternet(); err != nil {
+		log.Fatalf("Failed to configure NAT for internet: %v", err)
+	}
+	log.Printf("NAT configured (internet access enabled via eth0 MASQUERADE)")
+
 	// Listen on vsock for WireGuard gRPC API
 	listener, err := vsock.Listen(WIREGUARD_PORT, nil)
 	if err != nil {
@@ -396,10 +428,11 @@ func main() {
 
 	log.Printf("Listening on vsock port %d", WIREGUARD_PORT)
 
-	// Create gRPC server with DNS resolver
+	// Create gRPC server with DNS resolver and DNS server
 	grpcServer := grpc.NewServer()
 	pb.RegisterWireGuardServiceServer(grpcServer, &server{
 		dnsResolver: dnsResolver,
+		dnsServer:   dnsServer,
 	})
 
 	// Handle shutdown signals

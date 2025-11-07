@@ -243,12 +243,12 @@ func configureVethRootWithIP(ipAddress string, networkCIDR string) error {
 	return nil
 }
 
-// configureNATForInternet configures NAT/masquerading for internet access
+// ConfigureNATForInternet configures NAT/masquerading for internet access
 // This allows container traffic to reach the internet via eth0 (vmnet)
 // SECURITY: Blocks access to control plane vmnet network (192.168.64.0/16)
 // Uses nftables via netlink (no userspace binaries required)
 // CRITICAL: Must run in ROOT namespace where both veth-root0 and vmnet eth0 exist
-func configureNATForInternet() error {
+func ConfigureNATForInternet() error {
 	// CRITICAL: Lock goroutine to OS thread for namespace operations
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
@@ -301,12 +301,14 @@ func configureNATForInternet() error {
 	})
 
 	// SECURITY RULE 1: Create FORWARD chain to block control plane access
+	// NOTE: This is now a REGULAR chain (not a base chain), so it's only executed
+	// when jumped to from forward-portmap. This ensures port mapping rules are
+	// checked BEFORE security rules, fixing the issue where both base chains
+	// would process packets and the DROP rule would execute even after ACCEPT.
 	forwardChain := conn.AddChain(&nftables.Chain{
-		Name:     "forward-security",
-		Table:    table,
-		Type:     nftables.ChainTypeFilter,
-		Hooknum:  nftables.ChainHookForward,
-		Priority: nftables.ChainPriorityFilter,
+		Name:  "forward-security",
+		Table: table,
+		// No Type, Hooknum, or Priority - this is a regular chain, not a base chain
 	})
 
 	// Rule: DROP packets from container networks to control plane
@@ -354,6 +356,8 @@ func configureNATForInternet() error {
 				Register: 2,
 				Data:     controlNet.IP.To4(),
 			},
+			// Counter (for debugging - shows what we're dropping)
+			&expr.Counter{},
 			// Verdict: DROP
 			&expr.Verdict{
 				Kind: expr.VerdictDrop,
@@ -424,8 +428,10 @@ func configureNATForInternet() error {
 		Priority: nftables.ChainPriorityNATSource,
 	})
 
-	// Rule: MASQUERADE traffic going out eth0
-	log.Printf("Adding POSTROUTING rule: MASQUERADE on eth0 for internet access")
+	// Rule: MASQUERADE traffic going out eth0 (except control plane subnet)
+	// Control plane is 192.168.0.0/16 - we must NOT masquerade traffic to it
+	// (DNS queries to gateway, etc.) or responses can't find their way back
+	log.Printf("Adding POSTROUTING rule: MASQUERADE on eth0 for internet access (excluding 192.168.0.0/16)")
 	conn.AddRule(&nftables.Rule{
 		Table: table,
 		Chain: postRoutingChain,
@@ -437,7 +443,29 @@ func configureNATForInternet() error {
 				Register: 1,
 				Data:     []byte("eth0\x00"), // Null-terminated interface name
 			},
-			// Verdict: MASQUERADE
+			// Load destination IP address into register 1
+			&expr.Payload{
+				DestRegister: 1,
+				Base:         expr.PayloadBaseNetworkHeader,
+				Offset:       16, // IPv4 destination address offset
+				Len:          4,  // 4 bytes for IPv4 address
+			},
+			// Apply /16 netmask (255.255.0.0) to get network portion
+			&expr.Bitwise{
+				SourceRegister: 1,
+				DestRegister:   1,
+				Len:            4,
+				Mask:           []byte{0xff, 0xff, 0x00, 0x00}, // /16 netmask
+				Xor:            []byte{0x00, 0x00, 0x00, 0x00},
+			},
+			// Check destination network != 192.168.0.0/16 (control plane)
+			// If destination IS in control plane, rule doesn't match, no MASQUERADE
+			&expr.Cmp{
+				Op:       expr.CmpOpNeq,
+				Register: 1,
+				Data:     []byte{192, 168, 0, 0}, // 192.168.0.0
+			},
+			// Verdict: MASQUERADE (only if destination is NOT control plane)
 			&expr.Masq{},
 		},
 	})
@@ -454,6 +482,76 @@ func configureNATForInternet() error {
 	log.Printf("  - POSTROUTING chain: MASQUERADE on eth0")
 
 	return nil
+}
+
+// SetupDefaultRoute adds a default route in the root namespace for internet access
+// Called when the first network is added (after eth0 has an IP address)
+// The DNS server needs this route to reach upstream DNS via vmnet gateway
+// Returns the gateway IP address for DNS server configuration
+func SetupDefaultRoute() (string, error) {
+	// CRITICAL: Lock goroutine to OS thread for namespace operations
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
+	log.Printf("Setting up default route in root namespace via eth0")
+
+	// Get eth0 interface (vmnet)
+	eth0, err := netlink.LinkByName("eth0")
+	if err != nil {
+		return "", fmt.Errorf("failed to get eth0 interface: %w", err)
+	}
+
+	// Get eth0's IP addresses to determine gateway
+	addrs, err := netlink.AddrList(eth0, unix.AF_INET)
+	if err != nil || len(addrs) == 0 {
+		return "", fmt.Errorf("could not determine eth0 IP for gateway: %w", err)
+	}
+
+	// Extract gateway IP (first IP in subnet, e.g., 192.168.64.0/24 → 192.168.64.1)
+	ip := addrs[0].IP
+	mask := addrs[0].Mask
+
+	// Calculate network address
+	network := ip.Mask(mask)
+
+	// Gateway is typically network + 1 (e.g., 192.168.64.0 + 1 = 192.168.64.1)
+	gateway := make(net.IP, len(network))
+	copy(gateway, network)
+	gateway[len(gateway)-1] += 1
+
+	log.Printf("Detected vmnet gateway from eth0 subnet: %s", gateway.String())
+
+	// Check if default route already exists (avoid duplicate route error)
+	// Use nil to get ALL routes, not just eth0's routes (default route is global)
+	routes, err := netlink.RouteList(nil, unix.AF_INET)
+	if err != nil {
+		return "", fmt.Errorf("failed to list routes: %w", err)
+	}
+
+	for _, route := range routes {
+		// Default route has Dst == nil (0.0.0.0/0)
+		if route.Dst == nil {
+			log.Printf("Default route already exists via %s, skipping", route.Gw.String())
+			return gateway.String(), nil // Return discovered gateway
+		}
+	}
+
+	// Add default route via vmnet gateway
+	defaultRoute := &netlink.Route{
+		Dst:       nil, // nil means default route (0.0.0.0/0)
+		Gw:        gateway,
+		LinkIndex: eth0.Attrs().Index,
+	}
+
+	log.Printf("Adding default route: 0.0.0.0/0 via %s dev eth0", gateway.String())
+	if err := netlink.RouteAdd(defaultRoute); err != nil {
+		// Even if adding fails, return the gateway so DNS can be updated
+		log.Printf("Warning: failed to add default route: %v (returning gateway anyway)", err)
+		return gateway.String(), nil
+	}
+
+	log.Printf("✓ Default route added in root namespace (DNS can now reach upstream via vmnet gateway)")
+	return gateway.String(), nil
 }
 
 // ============================================================================
