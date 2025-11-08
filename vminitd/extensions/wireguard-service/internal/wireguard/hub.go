@@ -126,6 +126,19 @@ func (h *Hub) AddNetwork(
 		return "", "", "", fmt.Errorf("network %s already exists", networkID)
 	}
 
+	// 3.1.1 Write /etc/resolv.conf IMMEDIATELY on first network (before creating interfaces)
+	// This prevents race condition where container starts before DNS is configured
+	// We write it early so it's ready when container process starts
+	if networkIndex == 0 && h.containerID != "" {
+		resolvConfPath := fmt.Sprintf("/run/container/%s/rootfs/etc/resolv.conf", h.containerID)
+		resolvConfContent := fmt.Sprintf("nameserver %s\n", gateway)
+		if err := ioutil.WriteFile(resolvConfPath, []byte(resolvConfContent), 0644); err != nil {
+			log.Printf("Warning: failed to write resolv.conf: %v", err)
+		} else {
+			log.Printf("✓ Wrote /etc/resolv.conf EARLY: nameserver %s (prevents DNS race)", gateway)
+		}
+	}
+
 	// 3.2 Generate interface names
 	wgName := fmt.Sprintf("wg%d", networkIndex)
 	ethName := fmt.Sprintf("eth%d", networkIndex)
@@ -201,21 +214,7 @@ func (h *Hub) AddNetwork(
 		if gatewayIP != "" && h.onGatewayReady != nil {
 			h.onGatewayReady(gatewayIP)
 		}
-
-		// Write /etc/resolv.conf with gateway IP for DNS resolution
-		// DNS server binds to 0.0.0.0:53, secured by INPUT chain blocking eth0
-		// Container queries gateway IP directly (e.g., 172.18.0.1:53)
-		if h.containerID != "" {
-			resolvConfPath := fmt.Sprintf("/run/container/%s/rootfs/etc/resolv.conf", h.containerID)
-			resolvConfContent := fmt.Sprintf("nameserver %s\n", gateway)
-			if err := ioutil.WriteFile(resolvConfPath, []byte(resolvConfContent), 0644); err != nil {
-				log.Printf("Warning: failed to write resolv.conf: %v", err)
-			} else {
-				log.Printf("✓ Wrote /etc/resolv.conf: nameserver %s", gateway)
-			}
-		} else {
-			log.Printf("Warning: container ID not available, cannot write resolv.conf")
-		}
+		// Note: /etc/resolv.conf is now written EARLY (step 3.1.1) to prevent DNS race condition
 	}
 
 	// 3.10 Add initial peer (skip if empty for Phase 2.4 dynamic mesh)
