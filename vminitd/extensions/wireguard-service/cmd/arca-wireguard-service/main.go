@@ -28,6 +28,30 @@ const (
 
 var startTime = time.Now()
 
+// firewallOnce ensures firewall initialization happens exactly once
+var firewallOnce sync.Once
+
+// initializeFirewall sets up vmnet security and NAT rules
+// Called lazily on first AddNetwork RPC (not at startup)
+// This allows host network containers to skip firewall setup entirely
+func initializeFirewall() {
+	log.Printf("Initializing firewall rules (lazy init on first network)...")
+
+	// Configure default vmnet security (Phase 4.1)
+	// This blocks all vmnet INPUT except WireGuard UDP traffic
+	if err := wireguard.ConfigureDefaultVmnetSecurity(); err != nil {
+		log.Fatalf("Failed to configure vmnet security: %v", err)
+	}
+	log.Printf("vmnet security configured (underlay secured, only WireGuard UDP allowed)")
+
+	// Configure NAT for internet access (Phase 3)
+	// Creates MASQUERADE rule for eth0 → internet traffic
+	if err := wireguard.ConfigureNATForInternet(); err != nil {
+		log.Fatalf("Failed to configure NAT for internet: %v", err)
+	}
+	log.Printf("NAT configured (internet access enabled via eth0 MASQUERADE)")
+}
+
 // server implements the WireGuardService gRPC service
 type server struct {
 	pb.UnimplementedWireGuardServiceServer
@@ -42,6 +66,10 @@ type server struct {
 func (s *server) AddNetwork(ctx context.Context, req *pb.AddNetworkRequest) (*pb.AddNetworkResponse, error) {
 	log.Printf("AddNetwork: network_id=%s index=%d peer_endpoint=%s ip=%s network=%s",
 		req.NetworkId, req.NetworkIndex, req.PeerEndpoint, req.IpAddress, req.NetworkCidr)
+
+	// Initialize firewall on first network addition (thread-safe, runs exactly once)
+	// This allows host network containers (no AddNetwork calls) to skip firewall setup
+	firewallOnce.Do(initializeFirewall)
 
 	s.mu.Lock()
 
@@ -404,20 +432,9 @@ func main() {
 
 	log.Printf("DNS server started on 0.0.0.0:53 (accessible on gateway IPs, blocked from control plane)")
 
-	// Configure default vmnet security (Phase 4.1)
-	// This blocks all vmnet INPUT except WireGuard UDP traffic
-	if err := wireguard.ConfigureDefaultVmnetSecurity(); err != nil {
-		log.Fatalf("Failed to configure vmnet security: %v", err)
-	}
-	log.Printf("vmnet security configured (underlay secured, only WireGuard UDP allowed)")
-
-	// Configure NAT for internet access (Phase 3)
-	// CRITICAL: Must be called BEFORE DNS server tries to query upstream DNS (8.8.8.8)
-	// Creates MASQUERADE rule for eth0 → internet traffic
-	if err := wireguard.ConfigureNATForInternet(); err != nil {
-		log.Fatalf("Failed to configure NAT for internet: %v", err)
-	}
-	log.Printf("NAT configured (internet access enabled via eth0 MASQUERADE)")
+	// Firewall initialization is now lazy (see initializeFirewall function)
+	// It will be called on the first AddNetwork RPC, allowing host network containers
+	// to skip firewall setup entirely (they never call AddNetwork)
 
 	// Listen on vsock for WireGuard gRPC API
 	listener, err := vsock.Listen(WIREGUARD_PORT, nil)
