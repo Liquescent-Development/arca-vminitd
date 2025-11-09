@@ -31,6 +31,8 @@ public struct LinuxProcessConfiguration: Sendable {
     public var user: ContainerizationOCI.User = .init()
     /// The rlimits for the container process.
     public var rlimits: [POSIXRlimit] = []
+    /// The capabilities for the container process.
+    public var capabilities: ContainerizationOCI.LinuxCapabilities? = nil
     /// Whether to allocate a pseudo terminal for the process. If you'd like interactive
     /// behavior and are planning to use a terminal for stdin/out/err on the client side,
     /// this should likely be set to true.
@@ -50,6 +52,7 @@ public struct LinuxProcessConfiguration: Sendable {
         workingDirectory: String = "/",
         user: ContainerizationOCI.User = .init(),
         rlimits: [POSIXRlimit] = [],
+        capabilities: ContainerizationOCI.LinuxCapabilities? = nil,
         terminal: Bool = false,
         stdin: ReaderStream? = nil,
         stdout: Writer? = nil,
@@ -60,6 +63,7 @@ public struct LinuxProcessConfiguration: Sendable {
         self.workingDirectory = workingDirectory
         self.user = user
         self.rlimits = rlimits
+        self.capabilities = capabilities
         self.terminal = terminal
         self.stdin = stdin
         self.stdout = stdout
@@ -92,6 +96,7 @@ public struct LinuxProcessConfiguration: Sendable {
             args: self.arguments,
             cwd: self.workingDirectory,
             env: self.environmentVariables,
+            capabilities: self.capabilities,
             user: self.user,
             rlimits: self.rlimits,
             terminal: self.terminal
