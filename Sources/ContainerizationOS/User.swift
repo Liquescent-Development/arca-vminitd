@@ -75,11 +75,11 @@ public enum User {
         }
     }
 
-    struct Group {
-        var name: String
-        var password: String
-        var gid: UInt32
-        var users: [String]
+    public struct Group {
+        public var name: String
+        public var password: String
+        public var gid: UInt32
+        public var users: [String]
 
         /// The argument `rawString` must follow the below format.
         /// Name:Password:Gid:user1,user2
@@ -133,7 +133,7 @@ extension User {
     }
 
     /// Parse the contents of the group file with a provided filter function.
-    static func parseGroup(groupFile: URL, filter: ((Group) -> Bool)? = nil) throws -> [Group] {
+    public static func parseGroup(groupFile: URL, filter: ((Group) -> Bool)? = nil) throws -> [Group] {
         var groups: [Group] = []
         try self.parse(file: groupFile) { line in
             let group = try Group(rawString: line)
