@@ -1182,11 +1182,11 @@ extension Initd {
                                 process.user.additionalGids.append(groupEntry.gid)
                             }
                         } else {
-                            logger.warning("Group name not found in /etc/group: \(trimmedGroup)")
+                            log.warning("Group name not found in /etc/group: \(trimmedGroup)")
                         }
                     } catch {
                         // /etc/group doesn't exist or can't be read
-                        logger.warning("Failed to resolve group name '\(trimmedGroup)': \(error)")
+                        log.warning("Failed to resolve group name '\(trimmedGroup)': \(error)")
                     }
                 }
             }
