@@ -1157,6 +1157,44 @@ extension Initd {
             }
         }
 
+        // Handle ARCA_GROUP_ADD for --group-add support (Phase 5 - Task 5.3)
+        // Parse comma-separated group names/GIDs and resolve to numeric GIDs
+        if let groupAddEnv = process.env.first(where: { $0.hasPrefix("ARCA_GROUP_ADD=") }) {
+            let groupsString = String(groupAddEnv.dropFirst("ARCA_GROUP_ADD=".count))
+            let groups = groupsString.split(separator: ",").map(String.init)
+
+            for group in groups {
+                let trimmedGroup = group.trimmingCharacters(in: .whitespaces)
+                // Try parsing as numeric GID first
+                if let gid = UInt32(trimmedGroup) {
+                    if !process.user.additionalGids.contains(gid) {
+                        process.user.additionalGids.append(gid)
+                    }
+                } else {
+                    // Resolve group name to GID using /etc/group
+                    do {
+                        let groupEntries = try User.parseGroup(
+                            groupFile: URL(filePath: root.path).appending(path: "etc/group"),
+                            filter: { g in g.name == trimmedGroup }
+                        )
+                        if let groupEntry = groupEntries.first {
+                            if !process.user.additionalGids.contains(groupEntry.gid) {
+                                process.user.additionalGids.append(groupEntry.gid)
+                            }
+                        } else {
+                            logger.warning("Group name not found in /etc/group: \(trimmedGroup)")
+                        }
+                    } catch {
+                        // /etc/group doesn't exist or can't be read
+                        logger.warning("Failed to resolve group name '\(trimmedGroup)': \(error)")
+                    }
+                }
+            }
+
+            // Remove ARCA_GROUP_ADD from environment (internal use only)
+            process.env.removeAll(where: { $0.hasPrefix("ARCA_GROUP_ADD=") })
+        }
+
         ociSpec.process = process
     }
 }
