@@ -407,6 +407,23 @@ func (s *server) DumpNftables(ctx context.Context, req *pb.DumpNftablesRequest) 
 	}, nil
 }
 
+// SyncFilesystem flushes all filesystem buffers to disk
+// Calls the sync() syscall to ensure all cached writes are persisted
+// Used before reading container filesystem for accurate diff results
+func (s *server) SyncFilesystem(ctx context.Context, req *pb.SyncFilesystemRequest) (*pb.SyncFilesystemResponse, error) {
+	log.Printf("SyncFilesystem: flushing filesystem buffers")
+
+	// Call sync() syscall to flush all filesystem buffers
+	// This ensures all cached writes (from exec, container processes, etc.) are written to disk
+	syscall.Sync()
+
+	log.Printf("SyncFilesystem: filesystem buffers flushed successfully")
+
+	return &pb.SyncFilesystemResponse{
+		Success: true,
+	}, nil
+}
+
 func main() {
 	log.Printf("Arca WireGuard Service v%s starting...", VERSION)
 

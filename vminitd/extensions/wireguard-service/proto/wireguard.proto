@@ -37,6 +37,11 @@ service WireGuardService {
 
     // Dump nftables state for debugging (returns full ruleset with counters)
     rpc DumpNftables(DumpNftablesRequest) returns (DumpNftablesResponse);
+
+    // Sync filesystem (flush all cached writes to disk)
+    // Calls sync() syscall to ensure all filesystem buffers are written
+    // Used before reading container filesystem for accurate diff results
+    rpc SyncFilesystem(SyncFilesystemRequest) returns (SyncFilesystemResponse);
 }
 
 // Request to add a network to the container
@@ -315,4 +320,17 @@ message DumpNftablesResponse {
     // Full nftables ruleset output (from 'nft list ruleset')
     // Includes all tables, chains, rules, and packet counters
     string ruleset = 3;
+}
+
+// Request to sync filesystem (flush all cached writes)
+message SyncFilesystemRequest {
+    // No parameters needed
+}
+
+message SyncFilesystemResponse {
+    // Success status
+    bool success = 1;
+
+    // Error message if success = false
+    string error = 2;
 }
