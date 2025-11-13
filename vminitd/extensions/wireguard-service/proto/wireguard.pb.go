@@ -1539,6 +1539,333 @@ func (x *SyncFilesystemResponse) GetError() string {
 	return ""
 }
 
+// Request to read archive from filesystem path
+type ReadArchiveRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Container ID (for resolving /run/container/{id}/rootfs path)
+	ContainerId string `protobuf:"bytes,1,opt,name=container_id,json=containerId,proto3" json:"container_id,omitempty"`
+	// Path to file or directory to archive (e.g., "/tmp/myfile.txt" or "/etc")
+	Path          string `protobuf:"bytes,2,opt,name=path,proto3" json:"path,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReadArchiveRequest) Reset() {
+	*x = ReadArchiveRequest{}
+	mi := &file_proto_wireguard_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReadArchiveRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReadArchiveRequest) ProtoMessage() {}
+
+func (x *ReadArchiveRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_wireguard_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReadArchiveRequest.ProtoReflect.Descriptor instead.
+func (*ReadArchiveRequest) Descriptor() ([]byte, []int) {
+	return file_proto_wireguard_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *ReadArchiveRequest) GetContainerId() string {
+	if x != nil {
+		return x.ContainerId
+	}
+	return ""
+}
+
+func (x *ReadArchiveRequest) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+type ReadArchiveResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Success status
+	Success bool `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
+	// Error message if success = false
+	Error string `protobuf:"bytes,2,opt,name=error,proto3" json:"error,omitempty"`
+	// Tar archive data (gzip compressed)
+	TarData []byte `protobuf:"bytes,3,opt,name=tar_data,json=tarData,proto3" json:"tar_data,omitempty"`
+	// File stat information (for X-Docker-Container-Path-Stat header)
+	Stat          *PathStat `protobuf:"bytes,4,opt,name=stat,proto3" json:"stat,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReadArchiveResponse) Reset() {
+	*x = ReadArchiveResponse{}
+	mi := &file_proto_wireguard_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReadArchiveResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReadArchiveResponse) ProtoMessage() {}
+
+func (x *ReadArchiveResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_wireguard_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReadArchiveResponse.ProtoReflect.Descriptor instead.
+func (*ReadArchiveResponse) Descriptor() ([]byte, []int) {
+	return file_proto_wireguard_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *ReadArchiveResponse) GetSuccess() bool {
+	if x != nil {
+		return x.Success
+	}
+	return false
+}
+
+func (x *ReadArchiveResponse) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
+func (x *ReadArchiveResponse) GetTarData() []byte {
+	if x != nil {
+		return x.TarData
+	}
+	return nil
+}
+
+func (x *ReadArchiveResponse) GetStat() *PathStat {
+	if x != nil {
+		return x.Stat
+	}
+	return nil
+}
+
+// File stat information for archived paths
+type PathStat struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// File or directory name
+	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// File size in bytes
+	Size int64 `protobuf:"varint,2,opt,name=size,proto3" json:"size,omitempty"`
+	// File mode/permissions (os.FileMode as uint32)
+	Mode uint32 `protobuf:"varint,3,opt,name=mode,proto3" json:"mode,omitempty"`
+	// Modification time (RFC3339 format: "2006-01-02T15:04:05Z07:00")
+	Mtime string `protobuf:"bytes,4,opt,name=mtime,proto3" json:"mtime,omitempty"`
+	// Symbolic link target (empty if not a symlink)
+	LinkTarget    string `protobuf:"bytes,5,opt,name=link_target,json=linkTarget,proto3" json:"link_target,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PathStat) Reset() {
+	*x = PathStat{}
+	mi := &file_proto_wireguard_proto_msgTypes[25]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PathStat) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PathStat) ProtoMessage() {}
+
+func (x *PathStat) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_wireguard_proto_msgTypes[25]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PathStat.ProtoReflect.Descriptor instead.
+func (*PathStat) Descriptor() ([]byte, []int) {
+	return file_proto_wireguard_proto_rawDescGZIP(), []int{25}
+}
+
+func (x *PathStat) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *PathStat) GetSize() int64 {
+	if x != nil {
+		return x.Size
+	}
+	return 0
+}
+
+func (x *PathStat) GetMode() uint32 {
+	if x != nil {
+		return x.Mode
+	}
+	return 0
+}
+
+func (x *PathStat) GetMtime() string {
+	if x != nil {
+		return x.Mtime
+	}
+	return ""
+}
+
+func (x *PathStat) GetLinkTarget() string {
+	if x != nil {
+		return x.LinkTarget
+	}
+	return ""
+}
+
+// Request to write archive to filesystem path
+type WriteArchiveRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Container ID (for resolving /run/container/{id}/rootfs path)
+	ContainerId string `protobuf:"bytes,1,opt,name=container_id,json=containerId,proto3" json:"container_id,omitempty"`
+	// Destination path where archive should be extracted (e.g., "/tmp")
+	Path string `protobuf:"bytes,2,opt,name=path,proto3" json:"path,omitempty"`
+	// Tar archive data to extract
+	TarData       []byte `protobuf:"bytes,3,opt,name=tar_data,json=tarData,proto3" json:"tar_data,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WriteArchiveRequest) Reset() {
+	*x = WriteArchiveRequest{}
+	mi := &file_proto_wireguard_proto_msgTypes[26]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WriteArchiveRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WriteArchiveRequest) ProtoMessage() {}
+
+func (x *WriteArchiveRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_wireguard_proto_msgTypes[26]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WriteArchiveRequest.ProtoReflect.Descriptor instead.
+func (*WriteArchiveRequest) Descriptor() ([]byte, []int) {
+	return file_proto_wireguard_proto_rawDescGZIP(), []int{26}
+}
+
+func (x *WriteArchiveRequest) GetContainerId() string {
+	if x != nil {
+		return x.ContainerId
+	}
+	return ""
+}
+
+func (x *WriteArchiveRequest) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *WriteArchiveRequest) GetTarData() []byte {
+	if x != nil {
+		return x.TarData
+	}
+	return nil
+}
+
+type WriteArchiveResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Success status
+	Success bool `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
+	// Error message if success = false
+	Error         string `protobuf:"bytes,2,opt,name=error,proto3" json:"error,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WriteArchiveResponse) Reset() {
+	*x = WriteArchiveResponse{}
+	mi := &file_proto_wireguard_proto_msgTypes[27]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WriteArchiveResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WriteArchiveResponse) ProtoMessage() {}
+
+func (x *WriteArchiveResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_wireguard_proto_msgTypes[27]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WriteArchiveResponse.ProtoReflect.Descriptor instead.
+func (*WriteArchiveResponse) Descriptor() ([]byte, []int) {
+	return file_proto_wireguard_proto_rawDescGZIP(), []int{27}
+}
+
+func (x *WriteArchiveResponse) GetSuccess() bool {
+	if x != nil {
+		return x.Success
+	}
+	return false
+}
+
+func (x *WriteArchiveResponse) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
 var File_proto_wireguard_proto protoreflect.FileDescriptor
 
 const file_proto_wireguard_proto_rawDesc = "" +
@@ -1660,7 +1987,29 @@ const file_proto_wireguard_proto_rawDesc = "" +
 	"\x15SyncFilesystemRequest\"H\n" +
 	"\x16SyncFilesystemResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x14\n" +
-	"\x05error\x18\x02 \x01(\tR\x05error2\xcd\a\n" +
+	"\x05error\x18\x02 \x01(\tR\x05error\"K\n" +
+	"\x12ReadArchiveRequest\x12!\n" +
+	"\fcontainer_id\x18\x01 \x01(\tR\vcontainerId\x12\x12\n" +
+	"\x04path\x18\x02 \x01(\tR\x04path\"\x91\x01\n" +
+	"\x13ReadArchiveResponse\x12\x18\n" +
+	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x14\n" +
+	"\x05error\x18\x02 \x01(\tR\x05error\x12\x19\n" +
+	"\btar_data\x18\x03 \x01(\fR\atarData\x12/\n" +
+	"\x04stat\x18\x04 \x01(\v2\x1b.arca.wireguard.v1.PathStatR\x04stat\"}\n" +
+	"\bPathStat\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
+	"\x04size\x18\x02 \x01(\x03R\x04size\x12\x12\n" +
+	"\x04mode\x18\x03 \x01(\rR\x04mode\x12\x14\n" +
+	"\x05mtime\x18\x04 \x01(\tR\x05mtime\x12\x1f\n" +
+	"\vlink_target\x18\x05 \x01(\tR\n" +
+	"linkTarget\"g\n" +
+	"\x13WriteArchiveRequest\x12!\n" +
+	"\fcontainer_id\x18\x01 \x01(\tR\vcontainerId\x12\x12\n" +
+	"\x04path\x18\x02 \x01(\tR\x04path\x12\x19\n" +
+	"\btar_data\x18\x03 \x01(\fR\atarData\"F\n" +
+	"\x14WriteArchiveResponse\x12\x18\n" +
+	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x14\n" +
+	"\x05error\x18\x02 \x01(\tR\x05error2\x8c\t\n" +
 	"\x10WireGuardService\x12Y\n" +
 	"\n" +
 	"AddNetwork\x12$.arca.wireguard.v1.AddNetworkRequest\x1a%.arca.wireguard.v1.AddNetworkResponse\x12b\n" +
@@ -1673,7 +2022,9 @@ const file_proto_wireguard_proto_rawDesc = "" +
 	"\vPublishPort\x12%.arca.wireguard.v1.PublishPortRequest\x1a&.arca.wireguard.v1.PublishPortResponse\x12b\n" +
 	"\rUnpublishPort\x12'.arca.wireguard.v1.UnpublishPortRequest\x1a(.arca.wireguard.v1.UnpublishPortResponse\x12_\n" +
 	"\fDumpNftables\x12&.arca.wireguard.v1.DumpNftablesRequest\x1a'.arca.wireguard.v1.DumpNftablesResponse\x12e\n" +
-	"\x0eSyncFilesystem\x12(.arca.wireguard.v1.SyncFilesystemRequest\x1a).arca.wireguard.v1.SyncFilesystemResponseB5Z3github.com/vas-solutus/arca-wireguard-service/protob\x06proto3"
+	"\x0eSyncFilesystem\x12(.arca.wireguard.v1.SyncFilesystemRequest\x1a).arca.wireguard.v1.SyncFilesystemResponse\x12\\\n" +
+	"\vReadArchive\x12%.arca.wireguard.v1.ReadArchiveRequest\x1a&.arca.wireguard.v1.ReadArchiveResponse\x12_\n" +
+	"\fWriteArchive\x12&.arca.wireguard.v1.WriteArchiveRequest\x1a'.arca.wireguard.v1.WriteArchiveResponseB5Z3github.com/vas-solutus/arca-wireguard-service/protob\x06proto3"
 
 var (
 	file_proto_wireguard_proto_rawDescOnce sync.Once
@@ -1687,7 +2038,7 @@ func file_proto_wireguard_proto_rawDescGZIP() []byte {
 	return file_proto_wireguard_proto_rawDescData
 }
 
-var file_proto_wireguard_proto_msgTypes = make([]protoimpl.MessageInfo, 23)
+var file_proto_wireguard_proto_msgTypes = make([]protoimpl.MessageInfo, 28)
 var file_proto_wireguard_proto_goTypes = []any{
 	(*AddNetworkRequest)(nil),        // 0: arca.wireguard.v1.AddNetworkRequest
 	(*AddNetworkResponse)(nil),       // 1: arca.wireguard.v1.AddNetworkResponse
@@ -1712,36 +2063,46 @@ var file_proto_wireguard_proto_goTypes = []any{
 	(*DumpNftablesResponse)(nil),     // 20: arca.wireguard.v1.DumpNftablesResponse
 	(*SyncFilesystemRequest)(nil),    // 21: arca.wireguard.v1.SyncFilesystemRequest
 	(*SyncFilesystemResponse)(nil),   // 22: arca.wireguard.v1.SyncFilesystemResponse
+	(*ReadArchiveRequest)(nil),       // 23: arca.wireguard.v1.ReadArchiveRequest
+	(*ReadArchiveResponse)(nil),      // 24: arca.wireguard.v1.ReadArchiveResponse
+	(*PathStat)(nil),                 // 25: arca.wireguard.v1.PathStat
+	(*WriteArchiveRequest)(nil),      // 26: arca.wireguard.v1.WriteArchiveRequest
+	(*WriteArchiveResponse)(nil),     // 27: arca.wireguard.v1.WriteArchiveResponse
 }
 var file_proto_wireguard_proto_depIdxs = []int32{
 	6,  // 0: arca.wireguard.v1.GetStatusResponse.interfaces:type_name -> arca.wireguard.v1.InterfaceStatus
 	7,  // 1: arca.wireguard.v1.GetStatusResponse.peers:type_name -> arca.wireguard.v1.PeerStatus
 	8,  // 2: arca.wireguard.v1.PeerStatus.stats:type_name -> arca.wireguard.v1.TransferStats
-	0,  // 3: arca.wireguard.v1.WireGuardService.AddNetwork:input_type -> arca.wireguard.v1.AddNetworkRequest
-	2,  // 4: arca.wireguard.v1.WireGuardService.RemoveNetwork:input_type -> arca.wireguard.v1.RemoveNetworkRequest
-	11, // 5: arca.wireguard.v1.WireGuardService.AddPeer:input_type -> arca.wireguard.v1.AddPeerRequest
-	13, // 6: arca.wireguard.v1.WireGuardService.RemovePeer:input_type -> arca.wireguard.v1.RemovePeerRequest
-	4,  // 7: arca.wireguard.v1.WireGuardService.GetStatus:input_type -> arca.wireguard.v1.GetStatusRequest
-	9,  // 8: arca.wireguard.v1.WireGuardService.GetVmnetEndpoint:input_type -> arca.wireguard.v1.GetVmnetEndpointRequest
-	15, // 9: arca.wireguard.v1.WireGuardService.PublishPort:input_type -> arca.wireguard.v1.PublishPortRequest
-	17, // 10: arca.wireguard.v1.WireGuardService.UnpublishPort:input_type -> arca.wireguard.v1.UnpublishPortRequest
-	19, // 11: arca.wireguard.v1.WireGuardService.DumpNftables:input_type -> arca.wireguard.v1.DumpNftablesRequest
-	21, // 12: arca.wireguard.v1.WireGuardService.SyncFilesystem:input_type -> arca.wireguard.v1.SyncFilesystemRequest
-	1,  // 13: arca.wireguard.v1.WireGuardService.AddNetwork:output_type -> arca.wireguard.v1.AddNetworkResponse
-	3,  // 14: arca.wireguard.v1.WireGuardService.RemoveNetwork:output_type -> arca.wireguard.v1.RemoveNetworkResponse
-	12, // 15: arca.wireguard.v1.WireGuardService.AddPeer:output_type -> arca.wireguard.v1.AddPeerResponse
-	14, // 16: arca.wireguard.v1.WireGuardService.RemovePeer:output_type -> arca.wireguard.v1.RemovePeerResponse
-	5,  // 17: arca.wireguard.v1.WireGuardService.GetStatus:output_type -> arca.wireguard.v1.GetStatusResponse
-	10, // 18: arca.wireguard.v1.WireGuardService.GetVmnetEndpoint:output_type -> arca.wireguard.v1.GetVmnetEndpointResponse
-	16, // 19: arca.wireguard.v1.WireGuardService.PublishPort:output_type -> arca.wireguard.v1.PublishPortResponse
-	18, // 20: arca.wireguard.v1.WireGuardService.UnpublishPort:output_type -> arca.wireguard.v1.UnpublishPortResponse
-	20, // 21: arca.wireguard.v1.WireGuardService.DumpNftables:output_type -> arca.wireguard.v1.DumpNftablesResponse
-	22, // 22: arca.wireguard.v1.WireGuardService.SyncFilesystem:output_type -> arca.wireguard.v1.SyncFilesystemResponse
-	13, // [13:23] is the sub-list for method output_type
-	3,  // [3:13] is the sub-list for method input_type
-	3,  // [3:3] is the sub-list for extension type_name
-	3,  // [3:3] is the sub-list for extension extendee
-	0,  // [0:3] is the sub-list for field type_name
+	25, // 3: arca.wireguard.v1.ReadArchiveResponse.stat:type_name -> arca.wireguard.v1.PathStat
+	0,  // 4: arca.wireguard.v1.WireGuardService.AddNetwork:input_type -> arca.wireguard.v1.AddNetworkRequest
+	2,  // 5: arca.wireguard.v1.WireGuardService.RemoveNetwork:input_type -> arca.wireguard.v1.RemoveNetworkRequest
+	11, // 6: arca.wireguard.v1.WireGuardService.AddPeer:input_type -> arca.wireguard.v1.AddPeerRequest
+	13, // 7: arca.wireguard.v1.WireGuardService.RemovePeer:input_type -> arca.wireguard.v1.RemovePeerRequest
+	4,  // 8: arca.wireguard.v1.WireGuardService.GetStatus:input_type -> arca.wireguard.v1.GetStatusRequest
+	9,  // 9: arca.wireguard.v1.WireGuardService.GetVmnetEndpoint:input_type -> arca.wireguard.v1.GetVmnetEndpointRequest
+	15, // 10: arca.wireguard.v1.WireGuardService.PublishPort:input_type -> arca.wireguard.v1.PublishPortRequest
+	17, // 11: arca.wireguard.v1.WireGuardService.UnpublishPort:input_type -> arca.wireguard.v1.UnpublishPortRequest
+	19, // 12: arca.wireguard.v1.WireGuardService.DumpNftables:input_type -> arca.wireguard.v1.DumpNftablesRequest
+	21, // 13: arca.wireguard.v1.WireGuardService.SyncFilesystem:input_type -> arca.wireguard.v1.SyncFilesystemRequest
+	23, // 14: arca.wireguard.v1.WireGuardService.ReadArchive:input_type -> arca.wireguard.v1.ReadArchiveRequest
+	26, // 15: arca.wireguard.v1.WireGuardService.WriteArchive:input_type -> arca.wireguard.v1.WriteArchiveRequest
+	1,  // 16: arca.wireguard.v1.WireGuardService.AddNetwork:output_type -> arca.wireguard.v1.AddNetworkResponse
+	3,  // 17: arca.wireguard.v1.WireGuardService.RemoveNetwork:output_type -> arca.wireguard.v1.RemoveNetworkResponse
+	12, // 18: arca.wireguard.v1.WireGuardService.AddPeer:output_type -> arca.wireguard.v1.AddPeerResponse
+	14, // 19: arca.wireguard.v1.WireGuardService.RemovePeer:output_type -> arca.wireguard.v1.RemovePeerResponse
+	5,  // 20: arca.wireguard.v1.WireGuardService.GetStatus:output_type -> arca.wireguard.v1.GetStatusResponse
+	10, // 21: arca.wireguard.v1.WireGuardService.GetVmnetEndpoint:output_type -> arca.wireguard.v1.GetVmnetEndpointResponse
+	16, // 22: arca.wireguard.v1.WireGuardService.PublishPort:output_type -> arca.wireguard.v1.PublishPortResponse
+	18, // 23: arca.wireguard.v1.WireGuardService.UnpublishPort:output_type -> arca.wireguard.v1.UnpublishPortResponse
+	20, // 24: arca.wireguard.v1.WireGuardService.DumpNftables:output_type -> arca.wireguard.v1.DumpNftablesResponse
+	22, // 25: arca.wireguard.v1.WireGuardService.SyncFilesystem:output_type -> arca.wireguard.v1.SyncFilesystemResponse
+	24, // 26: arca.wireguard.v1.WireGuardService.ReadArchive:output_type -> arca.wireguard.v1.ReadArchiveResponse
+	27, // 27: arca.wireguard.v1.WireGuardService.WriteArchive:output_type -> arca.wireguard.v1.WriteArchiveResponse
+	16, // [16:28] is the sub-list for method output_type
+	4,  // [4:16] is the sub-list for method input_type
+	4,  // [4:4] is the sub-list for extension type_name
+	4,  // [4:4] is the sub-list for extension extendee
+	0,  // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_proto_wireguard_proto_init() }
@@ -1755,7 +2116,7 @@ func file_proto_wireguard_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_wireguard_proto_rawDesc), len(file_proto_wireguard_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   23,
+			NumMessages:   28,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
