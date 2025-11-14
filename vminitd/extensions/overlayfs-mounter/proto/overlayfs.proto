@@ -1,0 +1,68 @@
+syntax = "proto3";
+
+package arca.overlayfs.v1;
+
+option go_package = "github.com/apple/containerization/vminitd/extensions/overlayfs-mounter/proto";
+
+// OverlayFS mounting service for stacked layer filesystems
+//
+// This service runs inside each container's Linux VM and provides
+// OverlayFS mounting capabilities for the Arca container runtime.
+//
+// Architecture:
+// - Lower layers: Read-only EXT4 filesystems (image layers)
+// - Upper layer: Read-write directory for container changes
+// - Work directory: OverlayFS metadata directory
+// - Target: Mount point (typically /)
+service OverlayFSService {
+    // Mount OverlayFS with multiple lower layers
+    //
+    // Stacks multiple read-only layers with a read-write upper layer.
+    // Lower layers are ordered from top to bottom (reverse of input).
+    //
+    // Example:
+    //   lower_block_devices: ["/dev/vda", "/dev/vdb", "/dev/vdc"]
+    //   -> OverlayFS: vdc:vdb:vda (bottom to top)
+    rpc MountOverlay(MountOverlayRequest) returns (MountOverlayResponse);
+
+    // Unmount OverlayFS
+    //
+    // Unmounts the overlay filesystem and cleans up lower layer mounts.
+    rpc UnmountOverlay(UnmountOverlayRequest) returns (UnmountOverlayResponse);
+}
+
+message MountOverlayRequest {
+    // Block device paths in guest (e.g., /dev/vda, /dev/vdb, ...)
+    // Ordered from bottom layer to top layer
+    repeated string lower_block_devices = 1;
+
+    // Upper directory for writable layer (VirtioFS mount point)
+    string upper_dir = 2;
+
+    // Work directory for OverlayFS metadata (VirtioFS mount point)
+    string work_dir = 3;
+
+    // Target mount point (usually /)
+    string target = 4;
+}
+
+message MountOverlayResponse {
+    // Success status
+    bool success = 1;
+
+    // Error message if success = false
+    string error_message = 2;
+}
+
+message UnmountOverlayRequest {
+    // Target mount point to unmount
+    string target = 1;
+}
+
+message UnmountOverlayResponse {
+    // Success status
+    bool success = 1;
+
+    // Error message if success = false
+    string error_message = 2;
+}
