@@ -25,6 +25,13 @@ import ContainerizationExtras
 import SystemPackage
 import Logging
 
+/// Protocol for recording cached layer information
+/// Allows external systems (like Arca's StateStore) to track layer usage
+public protocol LayerCacheRecorder: Sendable {
+    func recordLayer(digest: String, path: String, size: Int64) async throws
+    func incrementLayerRefCount(digest: String) async throws
+}
+
 /// Unpacker that creates OverlayFS-compatible layer cache
 ///
 /// Instead of unpacking all layers sequentially into a single EXT4 filesystem,
@@ -41,10 +48,12 @@ import Logging
 /// Note: Does not conform to Unpacker protocol (returns OverlayFSConfig instead of Mount)
 public struct OverlayFSUnpacker: Sendable {
     public let layerCachePath: URL
+    private let recorder: (any LayerCacheRecorder)?
     private nonisolated(unsafe) let logger = Logger(label: "com.arca.OverlayFSUnpacker")
 
-    public init(layerCachePath: URL) {
+    public init(layerCachePath: URL, recorder: (any LayerCacheRecorder)? = nil) {
         self.layerCachePath = layerCachePath
+        self.recorder = recorder
     }
 
     /// Unpack image layers in parallel to cache directory
@@ -110,6 +119,16 @@ public struct OverlayFSUnpacker: Sendable {
             "duration_seconds": "\(String(format: "%.2f", unpackDuration))",
             "layers": "\(layerPaths.count)"
         ])
+
+        // Increment reference counts for all layers used by this container
+        if let recorder = recorder {
+            for layer in manifest.layers {
+                try await recorder.incrementLayerRefCount(digest: layer.digest)
+            }
+            logger.debug("Layer reference counts incremented", metadata: [
+                "layers": "\(manifest.layers.count)"
+            ])
+        }
 
         // Create upper and work directories for this container
         let upperDir = containerPath.appendingPathComponent("upper")
@@ -226,6 +245,15 @@ public struct OverlayFSUnpacker: Sendable {
             "duration_seconds": "\(String(format: "%.2f", unpackDuration))",
             "path": "\(layerPath.path)"
         ])
+
+        // Record layer in cache tracker (if provided)
+        if let recorder = recorder {
+            try await recorder.recordLayer(
+                digest: cacheKey,
+                path: layerPath.path,
+                size: layerSize
+            )
+        }
 
         return layerPath
     }
