@@ -422,6 +422,42 @@ public struct ContainerManager: Sendable {
         }
     }
 
+    /// Returns a new container using OverlayFS layer caching
+    /// - Parameters:
+    ///   - id: The container ID.
+    ///   - image: The image.
+    ///   - overlayConfig: The OverlayFS configuration with layer paths.
+    ///   - configuration: Configuration closure for customizing the container.
+    /// - Note: Phase 1 implementation - uses first layer as rootfs temporarily.
+    ///         Phase 2 will implement proper OverlayFS stacking in guest VM.
+    public mutating func create(
+        _ id: String,
+        image: Image,
+        overlayConfig: OverlayFSConfig,
+        configuration: (inout LinuxContainer.Configuration) throws -> Void
+    ) async throws -> LinuxContainer {
+        // Phase 1: Temporary implementation using first layer as rootfs
+        // Phase 2 will extend this to mount all layers + setup OverlayFS in guest
+        guard let firstLayer = overlayConfig.lowerLayers.first else {
+            throw ContainerizationError(.invalidArgument, message: "No layers in OverlayFS config")
+        }
+
+        let rootfs = Mount.block(
+            format: "ext4",
+            source: firstLayer.path,
+            destination: "/",
+            options: []
+        )
+
+        // Create container with temporary single-layer mount
+        return try await create(
+            id,
+            image: image,
+            rootfs: rootfs,
+            configuration: configuration
+        )
+    }
+
     /// Performs the cleanup of a container.
     /// - Parameter id: The container ID.
     public mutating func delete(_ id: String) throws {
@@ -451,6 +487,26 @@ public struct ContainerManager: Sendable {
             }
             throw err
         }
+    }
+
+    /// Unpack image layers with OverlayFS support
+    ///
+    /// Uses parallel layer unpacking and caching for improved performance.
+    /// Layers are cached at ~/.arca/layers/{digest}/layer.ext4 and reused across containers.
+    ///
+    /// - Parameters:
+    ///   - image: The OCI image to unpack
+    ///   - containerPath: Path where container upper/work dirs will be created
+    ///   - size: Unused (kept for API compatibility)
+    /// - Returns: OverlayFS configuration with layer paths and container dirs
+    private func unpackWithOverlay(image: Image, containerPath: URL, size: UInt64) async throws -> OverlayFSConfig {
+        let layerCachePath = imageStore.path.appendingPathComponent("layers")
+
+        // Create cache directory if needed
+        try FileManager.default.createDirectory(at: layerCachePath, withIntermediateDirectories: true)
+
+        let unpacker = OverlayFSUnpacker(layerCachePath: layerCachePath)
+        return try await unpacker.unpack(image, for: .current, at: containerPath)
     }
 }
 
