@@ -49,7 +49,7 @@ public protocol LayerCacheRecorder: Sendable {
 public struct OverlayFSUnpacker: Sendable {
     public let layerCachePath: URL
     private let recorder: (any LayerCacheRecorder)?
-    private nonisolated(unsafe) let logger = Logger(label: "com.arca.OverlayFSUnpacker")
+    private let logger = Logger(label: "com.arca.OverlayFSUnpacker")
 
     public init(layerCachePath: URL, recorder: (any LayerCacheRecorder)? = nil) {
         self.layerCachePath = layerCachePath

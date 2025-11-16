@@ -5,9 +5,7 @@
 package main
 
 import (
-	"fmt"
 	"log"
-	"net"
 	"os"
 	"os/signal"
 	"syscall"
@@ -15,8 +13,8 @@ import (
 	"github.com/mdlayher/vsock"
 	"google.golang.org/grpc"
 
-	"github.com/apple/containerization/vminitd/extensions/overlayfs-mounter"
-	pb "github.com/apple/containerization/vminitd/extensions/overlayfs-mounter/proto"
+	overlayfs "github.com/vas-solutus/arca-overlayfs-service"
+	pb "github.com/vas-solutus/arca-overlayfs-service/proto"
 )
 
 const (
@@ -65,43 +63,4 @@ func main() {
 	}
 
 	log.Printf("OverlayFS service stopped")
-}
-
-// vsockListener adapts vsock.Listener to net.Listener
-type vsockListener struct {
-	*vsock.Listener
-}
-
-func (l *vsockListener) Accept() (net.Conn, error) {
-	conn, err := l.Listener.Accept()
-	if err != nil {
-		return nil, err
-	}
-	return &vsockConn{Conn: conn}, nil
-}
-
-// vsockConn adapts vsock.Conn to net.Conn
-type vsockConn struct {
-	*vsock.Conn
-}
-
-func (c *vsockConn) RemoteAddr() net.Addr {
-	return &vsockAddr{c.Conn.RemoteAddr()}
-}
-
-func (c *vsockConn) LocalAddr() net.Addr {
-	return &vsockAddr{c.Conn.LocalAddr()}
-}
-
-// vsockAddr adapts vsock.Addr to net.Addr
-type vsockAddr struct {
-	vsock.Addr
-}
-
-func (a *vsockAddr) Network() string {
-	return "vsock"
-}
-
-func (a *vsockAddr) String() string {
-	return fmt.Sprintf("%d:%d", a.ContextID, a.Port)
 }

@@ -13,7 +13,7 @@ import (
 	"strings"
 
 	"golang.org/x/sys/unix"
-	pb "github.com/apple/containerization/vminitd/extensions/overlayfs-mounter/proto"
+	pb "github.com/vas-solutus/arca-overlayfs-service/proto"
 )
 
 // Server implements the OverlayFS service

@@ -132,6 +132,29 @@ struct Application {
             log.warning("arca-wireguard-service binary not found at \(wireGuardServicePath), WireGuard networking will not be available")
         }
 
+        // Start arca-overlayfs-service in background for OverlayFS layer mounting
+        // This service listens on vsock port 51821 (accessible from host via container.dialVsock())
+        let overlayFSServicePath = "/sbin/arca-overlayfs-service"
+        let overlayFSServiceExists = FileManager.default.fileExists(atPath: overlayFSServicePath)
+        log.info("arca-overlayfs-service binary exists: \(overlayFSServiceExists) at \(overlayFSServicePath)")
+
+        if overlayFSServiceExists {
+            log.info("starting arca-overlayfs-service...")
+            var overlayFSService = Command(overlayFSServicePath)
+            // Leave stdin/stdout/stderr as nil for detached background service
+            overlayFSService.stdin = nil
+            overlayFSService.stdout = nil
+            overlayFSService.stderr = .standardError  // Log errors to vminitd stderr
+            do {
+                try overlayFSService.start()
+                log.info("arca-overlayfs-service started successfully on vsock port 51821")
+            } catch {
+                log.error("failed to start arca-overlayfs-service: \(error)")
+            }
+        } else {
+            log.warning("arca-overlayfs-service binary not found at \(overlayFSServicePath), OverlayFS mounting will not be available")
+        }
+
         let eg = MultiThreadedEventLoopGroup(numberOfThreads: System.coreCount)
         let server = Initd(log: log, group: eg)
 
