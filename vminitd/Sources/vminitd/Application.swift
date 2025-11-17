@@ -27,6 +27,16 @@ import Musl
 import LCShim
 #endif
 
+// Global OverlayFS configuration for remounting at container rootfs paths
+actor OverlayFSConfig {
+    static let shared = OverlayFSConfig()
+    private(set) var mountOptions: String?
+
+    func setMountOptions(_ options: String) {
+        self.mountOptions = options
+    }
+}
+
 @main
 struct Application {
     private static let foregroundEnvVar = "FOREGROUND"
@@ -103,6 +113,10 @@ struct Application {
             log.error("failed to mount /run")
             exit(1)
         }
+        guard Musl.mount("tmpfs", "/mnt", "tmpfs", 0, "") == 0 else {
+            log.error("failed to mount /mnt")
+            exit(1)
+        }
         try Binfmt.mount()
 
         log.logLevel = .debug
@@ -153,6 +167,70 @@ struct Application {
             }
         } else {
             log.warning("arca-overlayfs-service binary not found at \(overlayFSServicePath), OverlayFS mounting will not be available")
+        }
+
+        // Auto-detect and mount OverlayFS if layer block devices are present
+        // This is NOT hardcoded - it only runs if vdb/vdc/vdd/etc exist (indicating OverlayFS layers)
+        if FileManager.default.fileExists(atPath: "/dev/vdb") {
+            log.info("detected writable block device at /dev/vdb, checking for OverlayFS layers...")
+
+            // Detect all layer block devices (vdc, vdd, vde, ...)
+            var layers: [String] = []
+            let deviceLetters = "cdefghijklmnopqrstuvwxyz"
+            for letter in deviceLetters {
+                let device = "/dev/vd\(letter)"
+                if FileManager.default.fileExists(atPath: device) {
+                    layers.append(device)
+                } else {
+                    break  // Stop at first missing device
+                }
+            }
+
+            if !layers.isEmpty {
+                log.info("detected \(layers.count) OverlayFS layer block devices")
+
+                // Create mount point and mount writable filesystem
+                try? FileManager.default.createDirectory(atPath: "/mnt/writable", withIntermediateDirectories: true)
+                guard Musl.mount("/dev/vdb", "/mnt/writable", "ext4", 0, "") == 0 else {
+                    log.error("failed to mount writable filesystem /dev/vdb to /mnt/writable (errno: \(errno))")
+                    exit(1)
+                }
+
+                // Mount each read-only layer
+                var lowerDirs: [String] = []
+                for (i, dev) in layers.enumerated() {
+                    let mnt = "/mnt/layer\(i)"
+                    try? FileManager.default.createDirectory(atPath: mnt, withIntermediateDirectories: true)
+                    guard Musl.mount(dev, mnt, "ext4", 1, "") == 0 else {  // 1 = MS_RDONLY
+                        log.error("failed to mount \(dev) to \(mnt)")
+                        exit(1)
+                    }
+                    lowerDirs.append(mnt)
+                }
+
+                // Create upper and work directories
+                do {
+                    try FileManager.default.createDirectory(atPath: "/mnt/writable/upper", withIntermediateDirectories: true)
+                    try FileManager.default.createDirectory(atPath: "/mnt/writable/work", withIntermediateDirectories: true)
+                    log.info("created OverlayFS upper and work directories")
+                } catch {
+                    log.error("failed to create OverlayFS directories: \(error)")
+                    exit(1)
+                }
+
+                // Save OverlayFS mount options for later use (will be mounted at container rootfs path via gRPC)
+                let opts = "lowerdir=\(lowerDirs.reversed().joined(separator: ":")),upperdir=/mnt/writable/upper,workdir=/mnt/writable/work"
+                await OverlayFSConfig.shared.setMountOptions(opts)
+
+                // DO NOT mount OverlayFS at / during boot
+                // Instead, it will be mounted directly at /run/container/{id}/rootfs when requested via gRPC
+                // This avoids the read-only bind mount issue
+                log.info("OverlayFS layers detected and prepared - will mount at container rootfs path (not at /)")
+            } else {
+                log.info("no layer block devices detected (vdc exists but no vdd+), skipping OverlayFS")
+            }
+        } else {
+            log.info("no OverlayFS block devices detected, using default rootfs")
         }
 
         let eg = MultiThreadedEventLoopGroup(numberOfThreads: System.coreCount)

@@ -315,9 +315,61 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContextAsyncProvid
                 "type": "\(request.type)",
                 "source": "\(request.source)",
                 "destination": "\(request.destination)",
+                "options": "\(request.options)",
             ])
 
         do {
+            // Skip block device mounts - they're already mounted during boot
+            // vminitd boot sequence mounts /dev/vdb (writable) and /dev/vdc+ (layers)
+            // at /mnt/writable and /mnt/layer{N} respectively
+            // OCI runtime shouldn't try to mount these again
+            if request.source.hasPrefix("/dev/vd") && request.source != "/dev" {
+                log.info("Skipping block device mount (already mounted during boot)", metadata: [
+                    "source": "\(request.source)",
+                    "destination": "\(request.destination)"
+                ])
+                return .init()
+            }
+
+            // Detect rootfs mount request (bind mount from / to /run/container/{id}/rootfs)
+            // Mount OverlayFS directly at the rootfs path instead of bind mounting
+            if request.type == "none" &&
+               request.options.contains("bind") &&
+               request.source == "/" &&
+               request.destination.contains("/rootfs") {
+
+                log.info("Mounting OverlayFS at rootfs path", metadata: [
+                    "destination": "\(request.destination)"
+                ])
+
+                guard let opts = await OverlayFSConfig.shared.mountOptions else {
+                    log.error("OverlayFS mount options not available")
+                    throw GRPCStatus(code: .internalError, message: "OverlayFS mount options not available")
+                }
+
+                // Create destination directory
+                try FileManager.default.createDirectory(
+                    atPath: request.destination,
+                    withIntermediateDirectories: true
+                )
+
+                // Mount OverlayFS directly at /run/container/{id}/rootfs
+                guard Musl.mount("overlay", request.destination, "overlay", 0, opts) == 0 else {
+                    log.error("Failed to mount OverlayFS", metadata: [
+                        "destination": "\(request.destination)",
+                        "errno": "\(errno)"
+                    ])
+                    throw GRPCStatus(code: .internalError, message: "failed to mount OverlayFS: errno \(errno)")
+                }
+
+                log.info("OverlayFS mounted at rootfs", metadata: [
+                    "destination": "\(request.destination)"
+                ])
+
+                return .init()
+            }
+
+            // Other mounts (proc, sys, tmpfs, etc.) - use existing logic
             let mnt = ContainerizationOS.Mount(
                 type: request.type,
                 source: request.source,
@@ -325,12 +377,8 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContextAsyncProvid
                 options: request.options
             )
 
-            #if os(Linux)
             try mnt.mount(createWithPerms: 0o755)
             return .init()
-            #else
-            fatalError("mount not supported on platform")
-            #endif
         } catch {
             log.error(
                 "mount",
@@ -857,8 +905,31 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContextAsyncProvid
             ])
 
         do {
+            // TEST: Check if location is writable before attempting
+            log.info("🔍 Testing if DNS location is writable", metadata: [
+                "location": "\(request.location)"
+            ])
+
+            let testPath = request.location + "/dns-write-test"
+            do {
+                try "test".write(toFile: testPath, atomically: false, encoding: .utf8)
+                try FileManager.default.removeItem(atPath: testPath)
+                log.info("✅ DNS location IS WRITABLE", metadata: [
+                    "location": "\(request.location)",
+                    "test_file": "\(testPath)"
+                ])
+            } catch {
+                log.error("❌ DNS location is READ-ONLY!", metadata: [
+                    "location": "\(request.location)",
+                    "test_file": "\(testPath)",
+                    "error": "\(error)"
+                ])
+            }
+
             let etc = URL(fileURLWithPath: request.location).appendingPathComponent("etc")
+            log.debug("attempting to create directory", metadata: ["path": "\(etc.path)"])
             try FileManager.default.createDirectory(atPath: etc.path, withIntermediateDirectories: true)
+            log.debug("directory created successfully", metadata: ["path": "\(etc.path)"])
             let resolvConf = etc.appendingPathComponent("resolv.conf")
             let config = DNS(
                 nameservers: request.nameservers,

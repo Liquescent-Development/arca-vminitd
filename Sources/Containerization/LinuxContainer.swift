@@ -387,8 +387,16 @@ extension LinuxContainer {
             do {
                 var spec = self.generateRuntimeSpec()
                 // We don't need the rootfs, nor do OCI runtimes want it included.
+                // Also filter out block device mounts (/dev/vdb, /dev/vdc, etc.) - these are
+                // mounted by vminitd during boot for OverlayFS, not by vmexec
                 let containerMounts = createdState.vm.mounts[self.id] ?? []
-                spec.mounts = containerMounts.dropFirst().map { $0.to }
+                spec.mounts = containerMounts.dropFirst().compactMap { mount in
+                    // Skip block device mounts - they're infrastructure for OverlayFS
+                    if mount.source.hasPrefix("/dev/vd") && mount.source != "/dev" {
+                        return nil
+                    }
+                    return mount.to
+                }
 
                 let stdio = IOUtil.setup(
                     portAllocator: self.hostVsockPorts,
