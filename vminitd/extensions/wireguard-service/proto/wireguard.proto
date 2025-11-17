@@ -37,21 +37,6 @@ service WireGuardService {
 
     // Dump nftables state for debugging (returns full ruleset with counters)
     rpc DumpNftables(DumpNftablesRequest) returns (DumpNftablesResponse);
-
-    // Sync filesystem (flush all cached writes to disk)
-    // Calls sync() syscall to ensure all filesystem buffers are written
-    // Used before reading container filesystem for accurate diff results
-    rpc SyncFilesystem(SyncFilesystemRequest) returns (SyncFilesystemResponse);
-
-    // Read archive - create tar archive of filesystem path
-    // Works universally without requiring tar in container
-    // Used for GET /containers/{id}/archive endpoint
-    rpc ReadArchive(ReadArchiveRequest) returns (ReadArchiveResponse);
-
-    // Write archive - extract tar archive to filesystem path
-    // Works universally without requiring tar in container
-    // Used for PUT /containers/{id}/archive endpoint
-    rpc WriteArchive(WriteArchiveRequest) returns (WriteArchiveResponse);
 }
 
 // Request to add a network to the container
@@ -330,78 +315,4 @@ message DumpNftablesResponse {
     // Full nftables ruleset output (from 'nft list ruleset')
     // Includes all tables, chains, rules, and packet counters
     string ruleset = 3;
-}
-
-// Request to sync filesystem (flush all cached writes)
-message SyncFilesystemRequest {
-    // No parameters needed
-}
-
-message SyncFilesystemResponse {
-    // Success status
-    bool success = 1;
-
-    // Error message if success = false
-    string error = 2;
-}
-
-// Request to read archive from filesystem path
-message ReadArchiveRequest {
-    // Container ID (for resolving /run/container/{id}/rootfs path)
-    string container_id = 1;
-
-    // Path to file or directory to archive (e.g., "/tmp/myfile.txt" or "/etc")
-    string path = 2;
-}
-
-message ReadArchiveResponse {
-    // Success status
-    bool success = 1;
-
-    // Error message if success = false
-    string error = 2;
-
-    // Tar archive data (gzip compressed)
-    bytes tar_data = 3;
-
-    // File stat information (for X-Docker-Container-Path-Stat header)
-    PathStat stat = 4;
-}
-
-// File stat information for archived paths
-message PathStat {
-    // File or directory name
-    string name = 1;
-
-    // File size in bytes
-    int64 size = 2;
-
-    // File mode/permissions (os.FileMode as uint32)
-    uint32 mode = 3;
-
-    // Modification time (RFC3339 format: "2006-01-02T15:04:05Z07:00")
-    string mtime = 4;
-
-    // Symbolic link target (empty if not a symlink)
-    string link_target = 5;
-}
-
-// Request to write archive to filesystem path
-message WriteArchiveRequest {
-    // Container ID (for resolving /run/container/{id}/rootfs path)
-    string container_id = 1;
-
-    // Destination path where archive should be extracted (e.g., "/tmp")
-    string path = 2;
-
-    // Tar archive data to extract
-    bytes tar_data = 3;
-}
-
-message WriteArchiveResponse {
-    // Success status
-    bool success = 1;
-
-    // Error message if success = false
-    string error = 2;
 }
