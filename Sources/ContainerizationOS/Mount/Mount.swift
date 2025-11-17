@@ -161,7 +161,6 @@ extension Mount {
                     "failed initial mount source=\(self.source) target=\(target) type=\(self.type) flags=\(originalFlags) data=\(dataString)"
                 )
             }
-            print("[Mount] Initial mount succeeded: source=\(self.source) target=\(target) flags=\(originalFlags) (MS_BIND=\(originalFlags & Int32(MS_BIND) != 0), MS_RDONLY=\(originalFlags & Int32(MS_RDONLY) != 0))")
         }
 
         if opts.flags & propagationTypes != 0 {
@@ -179,24 +178,17 @@ extension Mount {
             // First remount: Use MS_BIND | MS_REMOUNT to modify per-mount-point flags
             // Keep original flags (including MS_BIND) but exclude MS_REC
             let firstRemountFlags = (originalFlags & ~Int32(MS_REC)) | Int32(MS_REMOUNT)
-            print("[Mount] First remount (MS_BIND | MS_REMOUNT): target=\(target) flags=\(firstRemountFlags) (MS_BIND=\(firstRemountFlags & Int32(MS_BIND) != 0), MS_REMOUNT=\(firstRemountFlags & Int32(MS_REMOUNT) != 0), MS_RDONLY=\(firstRemountFlags & Int32(MS_RDONLY) != 0))")
             var result = _mount("", target, "", UInt(firstRemountFlags), "")
             if result != 0 {
-                print("[Mount] First remount FAILED: errno=\(errno)")
                 throw Error.errno(errno, "failed first bind mount remount flags=\(firstRemountFlags)")
             }
-            print("[Mount] First remount succeeded")
 
             // Second remount: Use just MS_REMOUNT to ensure writable (if not read-only)
             if originalFlags & Int32(MS_RDONLY) == 0 {
                 let secondRemountFlags = Int32(MS_REMOUNT)
-                print("[Mount] Second remount (MS_REMOUNT only): target=\(target) flags=\(secondRemountFlags)")
                 result = _mount("", target, "", UInt(secondRemountFlags), "")
                 if result != 0 {
-                    print("[Mount] Second remount FAILED: errno=\(errno) (continuing anyway)")
                     // Don't fail here - the first remount may have been sufficient
-                } else {
-                    print("[Mount] Second remount succeeded")
                 }
             }
         }
