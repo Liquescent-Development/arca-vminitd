@@ -155,7 +155,6 @@ struct RunCommand: ParsableCommand {
                 switch namespace.type {
                 case .network:
                     unshareFlags |= CLONE_NEWNET
-                    log.info("Creating network namespace for container (requested in OCI spec)")
                 case .ipc:
                     unshareFlags |= CLONE_NEWIPC
                 case .user:
