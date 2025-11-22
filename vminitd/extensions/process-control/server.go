@@ -9,6 +9,10 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
 	"sync"
 
 	pb "github.com/apple/containerization/vminitd/extensions/process-control/proto"
@@ -108,4 +112,172 @@ func (s *Server) MarkExited(exitCode int32) {
 	s.state = "exited"
 	s.exitCode = exitCode
 	log.Printf("Container process exited with code %d", exitCode)
+}
+
+// ListProcesses reads /proc to list all running processes
+//
+// Returns process information in ps-compatible format for Docker top API.
+// This avoids the race condition of running /bin/ps inside the container.
+//
+// IMPORTANT: Filters out root namespace processes (vminitd, services, kernel threads).
+// Since we have 1 container per VM, all non-root-namespace processes are container processes.
+func (s *Server) ListProcesses(ctx context.Context, req *pb.ListProcessesRequest) (*pb.ListProcessesResponse, error) {
+	// List all processes NOT in the root namespace
+	// Since we have 1 container per VM, these are all container processes
+	processes, err := listContainerProcesses()
+	if err != nil {
+		return nil, fmt.Errorf("failed to list container processes: %w", err)
+	}
+
+	// Return in ps -ef format
+	// Columns: UID PID PPID C STIME TTY TIME CMD
+	titles := []string{"UID", "PID", "PPID", "C", "STIME", "TTY", "TIME", "CMD"}
+
+	return &pb.ListProcessesResponse{
+		Titles:    titles,
+		Processes: processes,
+	}, nil
+}
+
+// listContainerProcesses reads /proc and filters out root namespace processes
+// Returns only processes in the container's namespace (since 1 container per VM).
+func listContainerProcesses() ([]*pb.ProcessInfo, error) {
+	// Get the service's PID namespace (this is the root namespace)
+	servicePID := os.Getpid()
+	rootNS, err := os.Readlink(fmt.Sprintf("/proc/%d/ns/pid", servicePID))
+	if err != nil {
+		return nil, fmt.Errorf("failed to read root PID namespace: %w", err)
+	}
+
+	// Read /proc directory to find all PIDs
+	entries, err := os.ReadDir("/proc")
+	if err != nil {
+		return nil, fmt.Errorf("failed to read /proc: %w", err)
+	}
+
+	var processes []*pb.ProcessInfo
+
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+
+		// Check if directory name is a number (PID)
+		pidStr := entry.Name()
+		pid, err := strconv.Atoi(pidStr)
+		if err != nil {
+			continue
+		}
+
+		// Check if this process is in the root namespace
+		procNS, err := os.Readlink(fmt.Sprintf("/proc/%d/ns/pid", pid))
+		if err != nil {
+			// Process may have exited, skip it
+			continue
+		}
+
+		// Skip processes in the root namespace (vminitd, services, kernel threads)
+		// Only include processes NOT in root namespace (container processes)
+		if procNS == rootNS {
+			continue
+		}
+
+		// Read process information
+		procInfo, err := readProcessInfo(pidStr)
+		if err != nil {
+			// Process may have exited or unreadable, skip it
+			continue
+		}
+
+		processes = append(processes, &pb.ProcessInfo{
+			Values: procInfo,
+		})
+	}
+
+	return processes, nil
+}
+
+// readProcessInfo reads process information from /proc/[pid]
+func readProcessInfo(pid string) ([]string, error) {
+	// Read /proc/[pid]/stat for basic process info
+	statPath := filepath.Join("/proc", pid, "stat")
+	statData, err := os.ReadFile(statPath)
+	if err != nil {
+		return nil, err
+	}
+
+	// Parse stat file: pid (comm) state ppid ...
+	statStr := string(statData)
+
+	// Find the command name (enclosed in parentheses)
+	commStart := strings.Index(statStr, "(")
+	commEnd := strings.LastIndex(statStr, ")")
+	if commStart == -1 || commEnd == -1 {
+		return nil, fmt.Errorf("invalid stat format")
+	}
+
+	// Split the stat fields (after the command name)
+	afterComm := strings.Fields(statStr[commEnd+2:])
+	if len(afterComm) < 11 {
+		return nil, fmt.Errorf("insufficient stat fields")
+	}
+
+	ppid := afterComm[0]
+	// state := afterComm[0] // We could use this if needed
+	utime := afterComm[11]
+	stime := afterComm[12]
+
+	// Read /proc/[pid]/cmdline for full command
+	cmdlinePath := filepath.Join("/proc", pid, "cmdline")
+	cmdlineData, err := os.ReadFile(cmdlinePath)
+	var cmdline string
+	if err == nil && len(cmdlineData) > 0 {
+		// cmdline uses null bytes as separators
+		cmdline = strings.ReplaceAll(string(cmdlineData), "\x00", " ")
+		cmdline = strings.TrimSpace(cmdline)
+	}
+	if cmdline == "" {
+		// Fall back to comm from stat
+		cmdline = statStr[commStart+1 : commEnd]
+	}
+
+	// Read /proc/[pid]/status for UID
+	statusPath := filepath.Join("/proc", pid, "status")
+	statusData, err := os.ReadFile(statusPath)
+	uid := "0" // default to root
+	if err == nil {
+		for _, line := range strings.Split(string(statusData), "\n") {
+			if strings.HasPrefix(line, "Uid:") {
+				fields := strings.Fields(line)
+				if len(fields) >= 2 {
+					uid = fields[1]
+					break
+				}
+			}
+		}
+	}
+
+	// Calculate total CPU time (utime + stime)
+	// These are in clock ticks, convert to seconds (assuming 100 ticks/second)
+	utimeInt, _ := strconv.ParseInt(utime, 10, 64)
+	stimeInt, _ := strconv.ParseInt(stime, 10, 64)
+	totalTicks := utimeInt + stimeInt
+	totalSeconds := totalTicks / 100
+
+	minutes := totalSeconds / 60
+	seconds := totalSeconds % 60
+	timeStr := fmt.Sprintf("00:%02d:%02d", minutes, seconds)
+
+	// Build ps -ef format output
+	// UID PID PPID C STIME TTY TIME CMD
+	return []string{
+		uid,       // UID
+		pid,       // PID
+		ppid,      // PPID
+		"0",       // C (CPU utilization - we could calculate this from stat)
+		"?",       // STIME (start time - we could read from /proc/[pid]/stat field 21)
+		"?",       // TTY
+		timeStr,   // TIME
+		cmdline,   // CMD
+	}, nil
 }

@@ -28,6 +28,12 @@ service ProcessService {
     //
     // Returns the current state of the container's init process.
     rpc GetProcessStatus(GetProcessStatusRequest) returns (GetProcessStatusResponse);
+
+    // List all processes running in the container
+    //
+    // Reads /proc filesystem directly to get process information.
+    // Returns data in ps-compatible format for Docker top API.
+    rpc ListProcesses(ListProcessesRequest) returns (ListProcessesResponse);
 }
 
 message StartProcessRequest {}
@@ -54,4 +60,24 @@ message GetProcessStatusResponse {
 
     // Exit code if exited
     int32 exit_code = 3;
+}
+
+message ListProcessesRequest {
+    // Optional ps arguments (e.g., "-ef", "-aux")
+    // If empty, defaults to "-ef"
+    string ps_args = 1;
+}
+
+message ListProcessesResponse {
+    // Column titles (e.g., ["UID", "PID", "PPID", "C", "STIME", "TTY", "TIME", "CMD"])
+    repeated string titles = 1;
+
+    // Each process is an array of values corresponding to the titles
+    // For example: [["root", "1", "0", "0", "12:00", "?", "00:00:00", "/bin/sh"]]
+    repeated ProcessInfo processes = 2;
+}
+
+message ProcessInfo {
+    // Values for this process, corresponding to titles in ListProcessesResponse
+    repeated string values = 1;
 }

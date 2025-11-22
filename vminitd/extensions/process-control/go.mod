@@ -3,13 +3,13 @@ module github.com/apple/containerization/vminitd/extensions/process-control
 go 1.24.0
 
 require (
-	github.com/mdlayher/vsock v1.2.1
 	google.golang.org/grpc v1.76.0
 	google.golang.org/protobuf v1.36.10
 )
 
 require (
-	github.com/mdlayher/socket v0.5.1 // indirect
+	github.com/mdlayher/socket v0.4.1 // indirect
+	github.com/mdlayher/vsock v1.2.1 // indirect
 	golang.org/x/net v0.46.0 // indirect
 	golang.org/x/sync v0.17.0 // indirect
 	golang.org/x/sys v0.37.0 // indirect

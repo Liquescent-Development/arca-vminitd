@@ -2,7 +2,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.5.1
 // - protoc             v6.33.0
-// source: process.proto
+// source: proto/process.proto
 
 package proto
 
@@ -21,6 +21,7 @@ const _ = grpc.SupportPackageIsVersion9
 const (
 	ProcessService_StartProcess_FullMethodName     = "/arca.process.v1.ProcessService/StartProcess"
 	ProcessService_GetProcessStatus_FullMethodName = "/arca.process.v1.ProcessService/GetProcessStatus"
+	ProcessService_ListProcesses_FullMethodName    = "/arca.process.v1.ProcessService/ListProcesses"
 )
 
 // ProcessServiceClient is the client API for ProcessService service.
@@ -50,6 +51,11 @@ type ProcessServiceClient interface {
 	//
 	// Returns the current state of the container's init process.
 	GetProcessStatus(ctx context.Context, in *GetProcessStatusRequest, opts ...grpc.CallOption) (*GetProcessStatusResponse, error)
+	// List all processes running in the container
+	//
+	// Reads /proc filesystem directly to get process information.
+	// Returns data in ps-compatible format for Docker top API.
+	ListProcesses(ctx context.Context, in *ListProcessesRequest, opts ...grpc.CallOption) (*ListProcessesResponse, error)
 }
 
 type processServiceClient struct {
@@ -74,6 +80,16 @@ func (c *processServiceClient) GetProcessStatus(ctx context.Context, in *GetProc
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetProcessStatusResponse)
 	err := c.cc.Invoke(ctx, ProcessService_GetProcessStatus_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *processServiceClient) ListProcesses(ctx context.Context, in *ListProcessesRequest, opts ...grpc.CallOption) (*ListProcessesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListProcessesResponse)
+	err := c.cc.Invoke(ctx, ProcessService_ListProcesses_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -107,6 +123,11 @@ type ProcessServiceServer interface {
 	//
 	// Returns the current state of the container's init process.
 	GetProcessStatus(context.Context, *GetProcessStatusRequest) (*GetProcessStatusResponse, error)
+	// List all processes running in the container
+	//
+	// Reads /proc filesystem directly to get process information.
+	// Returns data in ps-compatible format for Docker top API.
+	ListProcesses(context.Context, *ListProcessesRequest) (*ListProcessesResponse, error)
 	mustEmbedUnimplementedProcessServiceServer()
 }
 
@@ -122,6 +143,9 @@ func (UnimplementedProcessServiceServer) StartProcess(context.Context, *StartPro
 }
 func (UnimplementedProcessServiceServer) GetProcessStatus(context.Context, *GetProcessStatusRequest) (*GetProcessStatusResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetProcessStatus not implemented")
+}
+func (UnimplementedProcessServiceServer) ListProcesses(context.Context, *ListProcessesRequest) (*ListProcessesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListProcesses not implemented")
 }
 func (UnimplementedProcessServiceServer) mustEmbedUnimplementedProcessServiceServer() {}
 func (UnimplementedProcessServiceServer) testEmbeddedByValue()                        {}
@@ -180,6 +204,24 @@ func _ProcessService_GetProcessStatus_Handler(srv interface{}, ctx context.Conte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ProcessService_ListProcesses_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListProcessesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProcessServiceServer).ListProcesses(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ProcessService_ListProcesses_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProcessServiceServer).ListProcesses(ctx, req.(*ListProcessesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ProcessService_ServiceDesc is the grpc.ServiceDesc for ProcessService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -195,7 +237,11 @@ var ProcessService_ServiceDesc = grpc.ServiceDesc{
 			MethodName: "GetProcessStatus",
 			Handler:    _ProcessService_GetProcessStatus_Handler,
 		},
+		{
+			MethodName: "ListProcesses",
+			Handler:    _ProcessService_ListProcesses_Handler,
+		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "process.proto",
+	Metadata: "proto/process.proto",
 }

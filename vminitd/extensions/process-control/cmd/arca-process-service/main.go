@@ -3,29 +3,36 @@ package main
 import (
 	"fmt"
 	"log"
-	"net"
 	"os"
+	"strconv"
 
+	"github.com/mdlayher/vsock"
 	"google.golang.org/grpc"
 	pb "github.com/apple/containerization/vminitd/extensions/process-control/proto"
 	"github.com/apple/containerization/vminitd/extensions/process-control"
 )
 
+const (
+	PROCESS_SERVICE_PORT = 51822 // vsock port for Process Control API
+)
+
 func main() {
 	// Get vsock port from environment (default: 51822)
-	port := os.Getenv("PROCESS_SERVICE_PORT")
-	if port == "" {
-		port = "51822"
+	portStr := os.Getenv("PROCESS_SERVICE_PORT")
+	port := PROCESS_SERVICE_PORT
+	if portStr != "" {
+		if p, err := strconv.Atoi(portStr); err == nil {
+			port = p
+		}
 	}
 
-	// Listen on vsock
-	addr := fmt.Sprintf("vsock://:%%d/%%s", port)
-	lis, err := net.Listen("vsock", addr)
+	// Listen on vsock using mdlayher/vsock library (required for vsock support)
+	lis, err := vsock.Listen(uint32(port), nil)
 	if err != nil {
-		log.Fatalf("Failed to listen on vsock port %s: %v", port, err)
+		log.Fatalf("Failed to listen on vsock port %d: %v", port, err)
 	}
 
-	log.Printf("Process service listening on vsock port %s", port)
+	log.Printf("Process service listening on vsock port %d", port)
 
 	// Create gRPC server
 	grpcServer := grpc.NewServer()

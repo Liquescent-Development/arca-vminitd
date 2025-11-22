@@ -169,6 +169,29 @@ struct Application {
             log.warning("arca-overlayfs-service binary not found at \(overlayFSServicePath), OverlayFS mounting will not be available")
         }
 
+        // Start arca-process-service in background for process control
+        // This service listens on vsock port 51822 (accessible from host via container.dialVsock())
+        let processServicePath = "/sbin/arca-process-service"
+        let processServiceExists = FileManager.default.fileExists(atPath: processServicePath)
+        log.info("arca-process-service binary exists: \(processServiceExists) at \(processServicePath)")
+
+        if processServiceExists {
+            log.info("starting arca-process-service...")
+            var processService = Command(processServicePath)
+            // Leave stdin/stdout/stderr as nil for detached background service
+            processService.stdin = nil
+            processService.stdout = nil
+            processService.stderr = .standardError  // Log errors to vminitd stderr
+            do {
+                try processService.start()
+                log.info("arca-process-service started successfully on vsock port 51822")
+            } catch {
+                log.error("failed to start arca-process-service: \(error)")
+            }
+        } else {
+            log.warning("arca-process-service binary not found at \(processServicePath), process listing via gRPC will not be available")
+        }
+
         // Auto-detect and mount OverlayFS if layer block devices are present
         // This is NOT hardcoded - it only runs if vdb/vdc/vdd/etc exist (indicating OverlayFS layers)
         if FileManager.default.fileExists(atPath: "/dev/vdb") {

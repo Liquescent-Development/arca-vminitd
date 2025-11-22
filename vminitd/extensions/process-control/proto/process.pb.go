@@ -2,7 +2,7 @@
 // versions:
 // 	protoc-gen-go v1.36.10
 // 	protoc        v6.33.0
-// source: process.proto
+// source: proto/process.proto
 
 package proto
 
@@ -29,7 +29,7 @@ type StartProcessRequest struct {
 
 func (x *StartProcessRequest) Reset() {
 	*x = StartProcessRequest{}
-	mi := &file_process_proto_msgTypes[0]
+	mi := &file_proto_process_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -41,7 +41,7 @@ func (x *StartProcessRequest) String() string {
 func (*StartProcessRequest) ProtoMessage() {}
 
 func (x *StartProcessRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_process_proto_msgTypes[0]
+	mi := &file_proto_process_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -54,7 +54,7 @@ func (x *StartProcessRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StartProcessRequest.ProtoReflect.Descriptor instead.
 func (*StartProcessRequest) Descriptor() ([]byte, []int) {
-	return file_process_proto_rawDescGZIP(), []int{0}
+	return file_proto_process_proto_rawDescGZIP(), []int{0}
 }
 
 type StartProcessResponse struct {
@@ -71,7 +71,7 @@ type StartProcessResponse struct {
 
 func (x *StartProcessResponse) Reset() {
 	*x = StartProcessResponse{}
-	mi := &file_process_proto_msgTypes[1]
+	mi := &file_proto_process_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -83,7 +83,7 @@ func (x *StartProcessResponse) String() string {
 func (*StartProcessResponse) ProtoMessage() {}
 
 func (x *StartProcessResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_process_proto_msgTypes[1]
+	mi := &file_proto_process_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -96,7 +96,7 @@ func (x *StartProcessResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StartProcessResponse.ProtoReflect.Descriptor instead.
 func (*StartProcessResponse) Descriptor() ([]byte, []int) {
-	return file_process_proto_rawDescGZIP(), []int{1}
+	return file_proto_process_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *StartProcessResponse) GetSuccess() bool {
@@ -128,7 +128,7 @@ type GetProcessStatusRequest struct {
 
 func (x *GetProcessStatusRequest) Reset() {
 	*x = GetProcessStatusRequest{}
-	mi := &file_process_proto_msgTypes[2]
+	mi := &file_proto_process_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -140,7 +140,7 @@ func (x *GetProcessStatusRequest) String() string {
 func (*GetProcessStatusRequest) ProtoMessage() {}
 
 func (x *GetProcessStatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_process_proto_msgTypes[2]
+	mi := &file_proto_process_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -153,7 +153,7 @@ func (x *GetProcessStatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetProcessStatusRequest.ProtoReflect.Descriptor instead.
 func (*GetProcessStatusRequest) Descriptor() ([]byte, []int) {
-	return file_process_proto_rawDescGZIP(), []int{2}
+	return file_proto_process_proto_rawDescGZIP(), []int{2}
 }
 
 type GetProcessStatusResponse struct {
@@ -170,7 +170,7 @@ type GetProcessStatusResponse struct {
 
 func (x *GetProcessStatusResponse) Reset() {
 	*x = GetProcessStatusResponse{}
-	mi := &file_process_proto_msgTypes[3]
+	mi := &file_proto_process_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -182,7 +182,7 @@ func (x *GetProcessStatusResponse) String() string {
 func (*GetProcessStatusResponse) ProtoMessage() {}
 
 func (x *GetProcessStatusResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_process_proto_msgTypes[3]
+	mi := &file_proto_process_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -195,7 +195,7 @@ func (x *GetProcessStatusResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetProcessStatusResponse.ProtoReflect.Descriptor instead.
 func (*GetProcessStatusResponse) Descriptor() ([]byte, []int) {
-	return file_process_proto_rawDescGZIP(), []int{3}
+	return file_proto_process_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *GetProcessStatusResponse) GetState() string {
@@ -219,11 +219,157 @@ func (x *GetProcessStatusResponse) GetExitCode() int32 {
 	return 0
 }
 
-var File_process_proto protoreflect.FileDescriptor
+type ListProcessesRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Optional ps arguments (e.g., "-ef", "-aux")
+	// If empty, defaults to "-ef"
+	PsArgs        string `protobuf:"bytes,1,opt,name=ps_args,json=psArgs,proto3" json:"ps_args,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
 
-const file_process_proto_rawDesc = "" +
+func (x *ListProcessesRequest) Reset() {
+	*x = ListProcessesRequest{}
+	mi := &file_proto_process_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListProcessesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListProcessesRequest) ProtoMessage() {}
+
+func (x *ListProcessesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_process_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListProcessesRequest.ProtoReflect.Descriptor instead.
+func (*ListProcessesRequest) Descriptor() ([]byte, []int) {
+	return file_proto_process_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *ListProcessesRequest) GetPsArgs() string {
+	if x != nil {
+		return x.PsArgs
+	}
+	return ""
+}
+
+type ListProcessesResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Column titles (e.g., ["UID", "PID", "PPID", "C", "STIME", "TTY", "TIME", "CMD"])
+	Titles []string `protobuf:"bytes,1,rep,name=titles,proto3" json:"titles,omitempty"`
+	// Each process is an array of values corresponding to the titles
+	// For example: [["root", "1", "0", "0", "12:00", "?", "00:00:00", "/bin/sh"]]
+	Processes     []*ProcessInfo `protobuf:"bytes,2,rep,name=processes,proto3" json:"processes,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListProcessesResponse) Reset() {
+	*x = ListProcessesResponse{}
+	mi := &file_proto_process_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListProcessesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListProcessesResponse) ProtoMessage() {}
+
+func (x *ListProcessesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_process_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListProcessesResponse.ProtoReflect.Descriptor instead.
+func (*ListProcessesResponse) Descriptor() ([]byte, []int) {
+	return file_proto_process_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *ListProcessesResponse) GetTitles() []string {
+	if x != nil {
+		return x.Titles
+	}
+	return nil
+}
+
+func (x *ListProcessesResponse) GetProcesses() []*ProcessInfo {
+	if x != nil {
+		return x.Processes
+	}
+	return nil
+}
+
+type ProcessInfo struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Values for this process, corresponding to titles in ListProcessesResponse
+	Values        []string `protobuf:"bytes,1,rep,name=values,proto3" json:"values,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ProcessInfo) Reset() {
+	*x = ProcessInfo{}
+	mi := &file_proto_process_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProcessInfo) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProcessInfo) ProtoMessage() {}
+
+func (x *ProcessInfo) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_process_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProcessInfo.ProtoReflect.Descriptor instead.
+func (*ProcessInfo) Descriptor() ([]byte, []int) {
+	return file_proto_process_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *ProcessInfo) GetValues() []string {
+	if x != nil {
+		return x.Values
+	}
+	return nil
+}
+
+var File_proto_process_proto protoreflect.FileDescriptor
+
+const file_proto_process_proto_rawDesc = "" +
 	"\n" +
-	"\rprocess.proto\x12\x0farca.process.v1\"\x15\n" +
+	"\x13proto/process.proto\x12\x0farca.process.v1\"\x15\n" +
 	"\x13StartProcessRequest\"g\n" +
 	"\x14StartProcessResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12#\n" +
@@ -233,62 +379,76 @@ const file_process_proto_rawDesc = "" +
 	"\x18GetProcessStatusResponse\x12\x14\n" +
 	"\x05state\x18\x01 \x01(\tR\x05state\x12\x10\n" +
 	"\x03pid\x18\x02 \x01(\x05R\x03pid\x12\x1b\n" +
-	"\texit_code\x18\x03 \x01(\x05R\bexitCode2\xd6\x01\n" +
+	"\texit_code\x18\x03 \x01(\x05R\bexitCode\"/\n" +
+	"\x14ListProcessesRequest\x12\x17\n" +
+	"\aps_args\x18\x01 \x01(\tR\x06psArgs\"k\n" +
+	"\x15ListProcessesResponse\x12\x16\n" +
+	"\x06titles\x18\x01 \x03(\tR\x06titles\x12:\n" +
+	"\tprocesses\x18\x02 \x03(\v2\x1c.arca.process.v1.ProcessInfoR\tprocesses\"%\n" +
+	"\vProcessInfo\x12\x16\n" +
+	"\x06values\x18\x01 \x03(\tR\x06values2\xb6\x02\n" +
 	"\x0eProcessService\x12[\n" +
 	"\fStartProcess\x12$.arca.process.v1.StartProcessRequest\x1a%.arca.process.v1.StartProcessResponse\x12g\n" +
-	"\x10GetProcessStatus\x12(.arca.process.v1.GetProcessStatusRequest\x1a).arca.process.v1.GetProcessStatusResponseBLZJgithub.com/apple/containerization/vminitd/extensions/process-control/protob\x06proto3"
+	"\x10GetProcessStatus\x12(.arca.process.v1.GetProcessStatusRequest\x1a).arca.process.v1.GetProcessStatusResponse\x12^\n" +
+	"\rListProcesses\x12%.arca.process.v1.ListProcessesRequest\x1a&.arca.process.v1.ListProcessesResponseBLZJgithub.com/apple/containerization/vminitd/extensions/process-control/protob\x06proto3"
 
 var (
-	file_process_proto_rawDescOnce sync.Once
-	file_process_proto_rawDescData []byte
+	file_proto_process_proto_rawDescOnce sync.Once
+	file_proto_process_proto_rawDescData []byte
 )
 
-func file_process_proto_rawDescGZIP() []byte {
-	file_process_proto_rawDescOnce.Do(func() {
-		file_process_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_process_proto_rawDesc), len(file_process_proto_rawDesc)))
+func file_proto_process_proto_rawDescGZIP() []byte {
+	file_proto_process_proto_rawDescOnce.Do(func() {
+		file_proto_process_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_proto_process_proto_rawDesc), len(file_proto_process_proto_rawDesc)))
 	})
-	return file_process_proto_rawDescData
+	return file_proto_process_proto_rawDescData
 }
 
-var file_process_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
-var file_process_proto_goTypes = []any{
+var file_proto_process_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
+var file_proto_process_proto_goTypes = []any{
 	(*StartProcessRequest)(nil),      // 0: arca.process.v1.StartProcessRequest
 	(*StartProcessResponse)(nil),     // 1: arca.process.v1.StartProcessResponse
 	(*GetProcessStatusRequest)(nil),  // 2: arca.process.v1.GetProcessStatusRequest
 	(*GetProcessStatusResponse)(nil), // 3: arca.process.v1.GetProcessStatusResponse
+	(*ListProcessesRequest)(nil),     // 4: arca.process.v1.ListProcessesRequest
+	(*ListProcessesResponse)(nil),    // 5: arca.process.v1.ListProcessesResponse
+	(*ProcessInfo)(nil),              // 6: arca.process.v1.ProcessInfo
 }
-var file_process_proto_depIdxs = []int32{
-	0, // 0: arca.process.v1.ProcessService.StartProcess:input_type -> arca.process.v1.StartProcessRequest
-	2, // 1: arca.process.v1.ProcessService.GetProcessStatus:input_type -> arca.process.v1.GetProcessStatusRequest
-	1, // 2: arca.process.v1.ProcessService.StartProcess:output_type -> arca.process.v1.StartProcessResponse
-	3, // 3: arca.process.v1.ProcessService.GetProcessStatus:output_type -> arca.process.v1.GetProcessStatusResponse
-	2, // [2:4] is the sub-list for method output_type
-	0, // [0:2] is the sub-list for method input_type
-	0, // [0:0] is the sub-list for extension type_name
-	0, // [0:0] is the sub-list for extension extendee
-	0, // [0:0] is the sub-list for field type_name
+var file_proto_process_proto_depIdxs = []int32{
+	6, // 0: arca.process.v1.ListProcessesResponse.processes:type_name -> arca.process.v1.ProcessInfo
+	0, // 1: arca.process.v1.ProcessService.StartProcess:input_type -> arca.process.v1.StartProcessRequest
+	2, // 2: arca.process.v1.ProcessService.GetProcessStatus:input_type -> arca.process.v1.GetProcessStatusRequest
+	4, // 3: arca.process.v1.ProcessService.ListProcesses:input_type -> arca.process.v1.ListProcessesRequest
+	1, // 4: arca.process.v1.ProcessService.StartProcess:output_type -> arca.process.v1.StartProcessResponse
+	3, // 5: arca.process.v1.ProcessService.GetProcessStatus:output_type -> arca.process.v1.GetProcessStatusResponse
+	5, // 6: arca.process.v1.ProcessService.ListProcesses:output_type -> arca.process.v1.ListProcessesResponse
+	4, // [4:7] is the sub-list for method output_type
+	1, // [1:4] is the sub-list for method input_type
+	1, // [1:1] is the sub-list for extension type_name
+	1, // [1:1] is the sub-list for extension extendee
+	0, // [0:1] is the sub-list for field type_name
 }
 
-func init() { file_process_proto_init() }
-func file_process_proto_init() {
-	if File_process_proto != nil {
+func init() { file_proto_process_proto_init() }
+func file_proto_process_proto_init() {
+	if File_proto_process_proto != nil {
 		return
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_process_proto_rawDesc), len(file_process_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_process_proto_rawDesc), len(file_proto_process_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   4,
+			NumMessages:   7,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
-		GoTypes:           file_process_proto_goTypes,
-		DependencyIndexes: file_process_proto_depIdxs,
-		MessageInfos:      file_process_proto_msgTypes,
+		GoTypes:           file_proto_process_proto_goTypes,
+		DependencyIndexes: file_proto_process_proto_depIdxs,
+		MessageInfos:      file_proto_process_proto_msgTypes,
 	}.Build()
-	File_process_proto = out.File
-	file_process_proto_goTypes = nil
-	file_process_proto_depIdxs = nil
+	File_proto_process_proto = out.File
+	file_proto_process_proto_goTypes = nil
+	file_proto_process_proto_depIdxs = nil
 }
