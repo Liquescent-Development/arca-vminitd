@@ -155,14 +155,15 @@ func listContainerProcesses() ([]*pb.ProcessInfo, error) {
 		return nil, fmt.Errorf("failed to read /proc: %w", err)
 	}
 
-	var processes []*pb.ProcessInfo
+	// First pass: build a map of root namespace PID -> container namespace PID
+	// This is needed to translate PPIDs correctly
+	pidTranslation := make(map[string]string)
 
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
 		}
 
-		// Check if directory name is a number (PID)
 		pidStr := entry.Name()
 		pid, err := strconv.Atoi(pidStr)
 		if err != nil {
@@ -172,18 +173,61 @@ func listContainerProcesses() ([]*pb.ProcessInfo, error) {
 		// Check if this process is in the root namespace
 		procNS, err := os.Readlink(fmt.Sprintf("/proc/%d/ns/pid", pid))
 		if err != nil {
-			// Process may have exited, skip it
 			continue
 		}
 
-		// Skip processes in the root namespace (vminitd, services, kernel threads)
-		// Only include processes NOT in root namespace (container processes)
+		// Skip root namespace processes
 		if procNS == rootNS {
 			continue
 		}
 
-		// Read process information
-		procInfo, err := readProcessInfo(pidStr)
+		// Read NSpid from status to get container-namespace PID
+		statusPath := fmt.Sprintf("/proc/%d/status", pid)
+		statusData, err := os.ReadFile(statusPath)
+		if err != nil {
+			continue
+		}
+
+		for _, line := range strings.Split(string(statusData), "\n") {
+			if strings.HasPrefix(line, "NSpid:") {
+				fields := strings.Fields(line)
+				if len(fields) >= 3 {
+					rootPID := fields[1]      // Root namespace PID
+					containerPID := fields[len(fields)-1]  // Container namespace PID
+					pidTranslation[rootPID] = containerPID
+				}
+				break
+			}
+		}
+	}
+
+	// Second pass: collect process information
+	var processes []*pb.ProcessInfo
+
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+
+		pidStr := entry.Name()
+		pid, err := strconv.Atoi(pidStr)
+		if err != nil {
+			continue
+		}
+
+		// Check if this process is in the root namespace
+		procNS, err := os.Readlink(fmt.Sprintf("/proc/%d/ns/pid", pid))
+		if err != nil {
+			continue
+		}
+
+		// Skip processes in the root namespace
+		if procNS == rootNS {
+			continue
+		}
+
+		// Read process information with PID translation
+		procInfo, err := readProcessInfo(pidStr, pidTranslation)
 		if err != nil {
 			// Process may have exited or unreadable, skip it
 			continue
@@ -198,7 +242,8 @@ func listContainerProcesses() ([]*pb.ProcessInfo, error) {
 }
 
 // readProcessInfo reads process information from /proc/[pid]
-func readProcessInfo(pid string) ([]string, error) {
+// pidTranslation maps root namespace PIDs to container namespace PIDs
+func readProcessInfo(pid string, pidTranslation map[string]string) ([]string, error) {
 	// Read /proc/[pid]/stat for basic process info
 	statPath := filepath.Join("/proc", pid, "stat")
 	statData, err := os.ReadFile(statPath)
@@ -222,7 +267,7 @@ func readProcessInfo(pid string) ([]string, error) {
 		return nil, fmt.Errorf("insufficient stat fields")
 	}
 
-	ppid := afterComm[0]
+	ppid := afterComm[0]  // PPID in root namespace
 	// state := afterComm[0] // We could use this if needed
 	utime := afterComm[11]
 	stime := afterComm[12]
@@ -257,6 +302,17 @@ func readProcessInfo(pid string) ([]string, error) {
 		}
 	}
 
+	// Translate PIDs from root namespace to container namespace
+	containerPID := pidTranslation[pid]
+	if containerPID == "" {
+		containerPID = pid // fallback to root namespace PID
+	}
+
+	containerPPID := pidTranslation[ppid]
+	if containerPPID == "" {
+		containerPPID = "0" // Parent not in container namespace (e.g., init's parent)
+	}
+
 	// Calculate total CPU time (utime + stime)
 	// These are in clock ticks, convert to seconds (assuming 100 ticks/second)
 	utimeInt, _ := strconv.ParseInt(utime, 10, 64)
@@ -271,13 +327,13 @@ func readProcessInfo(pid string) ([]string, error) {
 	// Build ps -ef format output
 	// UID PID PPID C STIME TTY TIME CMD
 	return []string{
-		uid,       // UID
-		pid,       // PID
-		ppid,      // PPID
-		"0",       // C (CPU utilization - we could calculate this from stat)
-		"?",       // STIME (start time - we could read from /proc/[pid]/stat field 21)
-		"?",       // TTY
-		timeStr,   // TIME
-		cmdline,   // CMD
+		uid,            // UID
+		containerPID,   // PID (container namespace)
+		containerPPID,  // PPID (container namespace)
+		"0",            // C (CPU utilization - we could calculate this from stat)
+		"?",            // STIME (start time - we could read from /proc/[pid]/stat field 21)
+		"?",            // TTY
+		timeStr,        // TIME
+		cmdline,        // CMD
 	}, nil
 }
